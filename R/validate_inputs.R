@@ -189,3 +189,105 @@
 
   invisible(NULL)
 }
+
+
+# -----------------------------------------------------------------------------
+#' Validate engineering_params
+#'
+#' @description
+#' Checks that \code{engineering_params} contains valid and consistent
+#' entries for \code{col_transform}, \code{genesets}, and \code{agg_method}.
+#'
+#' @param params The \code{engineering_params} list.
+#' @return Invisibly returns \code{NULL} if validation passes.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.validate_engineering_params <- function(params) {
+
+  # method is already checked by .validate_params_list upstream
+
+  col_transform <- params$col_transform %||% "none"
+  if (!col_transform %in% c("none", "z"))
+    stop("[predictomics] engineering_params$col_transform must be 'none' or 'z'.",
+         call. = FALSE)
+
+  genesets <- params$genesets
+  if (!is.null(genesets)) {
+
+    if (!is.list(genesets) || is.null(names(genesets)) ||
+        any(names(genesets) == ""))
+      stop("[predictomics] engineering_params$genesets must be a named list.",
+           call. = FALSE)
+
+    if (!all(vapply(genesets, is.character, logical(1))))
+      stop("[predictomics] Each element of engineering_params$genesets must ",
+           "be a character vector of feature names.", call. = FALSE)
+
+    agg_method <- params$agg_method
+    if (is.null(agg_method) || !agg_method %in% c("mean", "median", "sum", "pc1"))
+      stop("[predictomics] engineering_params$agg_method must be one of ",
+           "'mean', 'median', 'sum', or 'pc1' when genesets are provided.",
+           call. = FALSE)
+  }
+
+  invisible(NULL)
+}
+
+# -----------------------------------------------------------------------------
+#' Validate model_params
+#'
+#' @description
+#' Checks that \code{model_params} specifies a supported method and that
+#' tuning-related arguments are consistent and valid.
+#'
+#' @param params The \code{model_params} list.
+#' @param n_train Integer. Number of training samples, used to bound
+#'   \code{inner_folds}.
+#' @return Invisibly returns \code{NULL} if validation passes.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.validate_model_params <- function(params, n_train) {
+
+  # method
+  supported <- c("lm", "glmnet", "ranger")
+  if (!params$method %in% supported)
+    stop("[predictomics] model_params$method must be one of: ",
+         paste(supported, collapse = ", "), ".", call. = FALSE)
+
+  # inner_folds
+  inner_folds <- params$inner_folds %||% 5L
+  if (!is.numeric(inner_folds) || length(inner_folds) != 1L ||
+      inner_folds != as.integer(inner_folds) || inner_folds < 2L)
+    stop("[predictomics] model_params$inner_folds must be an integer >= 2.",
+         call. = FALSE)
+  if (inner_folds >= n_train)
+    stop("[predictomics] model_params$inner_folds (", inner_folds, ") must be ",
+         "less than the number of training samples (", n_train, ").",
+         call. = FALSE)
+
+  # tune_grid
+  if (!is.null(params$tune_grid) && !is.data.frame(params$tune_grid))
+    stop("[predictomics] model_params$tune_grid must be a data frame or NULL.",
+         call. = FALSE)
+
+  # tune_length
+  tune_length <- params$tune_length
+  if (!is.null(tune_length)) {
+    if (!is.numeric(tune_length) || length(tune_length) != 1L ||
+        tune_length != as.integer(tune_length) || tune_length < 1L)
+      stop("[predictomics] model_params$tune_length must be a positive integer.",
+           call. = FALSE)
+  }
+
+  # seed and fold_id
+  seed    <- params$seed    %||% 12345L
+  fold_id <- params$fold_id %||% 0L
+  if (!is.numeric(seed)    || length(seed)    != 1L)
+    stop("[predictomics] model_params$seed must be a single numeric value.",
+         call. = FALSE)
+  if (!is.numeric(fold_id) || length(fold_id) != 1L)
+    stop("[predictomics] model_params$fold_id must be a single numeric value.",
+         call. = FALSE)
+
+  invisible(NULL)
+}

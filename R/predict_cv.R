@@ -30,12 +30,13 @@
 #' @param Y Numeric vector of length n. The response variable to be predicted.
 #' @param X Numeric matrix of dimensions n (samples) x p (features).
 #'   The predictor matrix. column names should be feature identifiers.
-#' @param cv_type Character specifying the cross-validation type.
-#'   Either "kfold" (k-fold CV) or "loo" (leave-one-out CV).
-#' @param folds Positive integer. Number of CV folds when \code{\link{cv_type}} is "kfold".
-#' Defaults to \code{10}.
-#' @param seed Integer. Random seed for reproducible fold assignment. Defaults
-#'   to \code{12345}.
+#' @param cv_type Character string. Type of cross-validation. One of
+#'   \code{"kfold"} (K-fold CV) or \code{"loo"} (leave-one-out CV). Defaults to \code{"kfold"}.
+#' @param k Positive integer. Number of folds for k-fold CV. Must satisfy
+#'   \code{2 <= k <= n}. Ignored when \code{cv_type = "loo"}.
+#'   Defaults to \code{10}.
+#' @param seed Integer. Random seed for reproducible fold assignment in k-fold
+#'   CV. Ignored when \code{cv_type = "loo"}. Defaults to \code{12345}.
 #' @param engineering_params A named list specifying feature engineering steps
 #'   to apply. See \code{\link{run_engineering}} for supported options. Pass
 #'   \code{NULL} (default) to skip engineering.
@@ -93,14 +94,14 @@
 #' Y <- X[, 1] * 2 + rnorm(n)
 #'
 #' # Basic usage: 5-fold CV with default OLS model
-#' result <- predict_cv(Y = Y, X = X)
+#' result <- predict_cv(Y = Y, X = X)}
 #'
 #' @export
 # -----------------------------------------------------------------------------
 predict_cv <- function(Y,
                        X,
                        cv_type            = "kfold",
-                       folds              = 5L,
+                       folds              = 10L,
                        seed               = 12345L,
                        engineering_params = NULL,
                        selection_params   = NULL,
@@ -113,11 +114,22 @@ predict_cv <- function(Y,
   # ---------------------------------------------------------------------------
   # 1. Input validation
   # ---------------------------------------------------------------------------
-  # Call generic input validation function
-  .validate_inputs(Y, X, cv_type, folds, seed, outside_cv, verbose)
 
   n <- length(Y)
   p <- ncol(X)
+  folds <- if (cv_type == "loo") {
+    n
+  } else {
+    folds
+  }
+
+  .validate_Y(Y)
+  .validate_X(X)
+  .validate_Y_X_compat(Y, X)
+  .validate_scalar_args(cv_type = cv_type, folds = folds, n = length(Y), seed = seed, outside_cv = outside_cv, verbose = verbose)
+  .validate_params_list(params = engineering_params, arg_name = "engineering_params")
+  .validate_params_list(params = selection_params, arg_name =  "selection_params")
+  .validate_params_list(params = model_params, arg_name =  "model_params")
 
   # ---------------------------------------------------------------------------
   # 2. Outside-CV warning
@@ -187,7 +199,7 @@ predict_cv <- function(Y,
     if (!outside_cv && !is.null(engineering_params)) {
       eng_fit <- run_engineering(X_train = X_train, params = engineering_params)
       X_train <- eng_fit$X_transformed
-      X_test  <- predict_engineering(eng_fit, X_new = X_test)
+      X_test  <- predict_engineering(eng_fit$fit, X_new = X_test)
     }
 
     # -- Inside-CV feature selection -----------------------------------------
@@ -199,9 +211,12 @@ predict_cv <- function(Y,
     }
 
     # -- Model fitting and prediction ----------------------------------------
-    model_fit              <- run_model(X_train = X_train, Y_train = Y_train,
-                                        params = model_params)
-    predictions[test_idx]  <- predict_model(model_fit, X_new = X_test)
+    model_fit <- run_model(
+      X_train = X_train,
+      Y_train = Y_train,
+      params  = modifyList(model_params, list(fold_id = k))
+    )
+    predictions[test_idx] <- predict_model(fit = model_fit, X_new = X_test)
   }
 
   if (verbose){
@@ -220,63 +235,12 @@ predict_cv <- function(Y,
       selection_params    = selection_params,
       model_params        = model_params,
       outside_cv          = outside_cv,
+      cv_type             = cv_type,
+      n_folds             = folds,
       n_samples           = n,
       n_features_input    = p,
       call                = cl
     ),
     class = "predictomics"
   )
-}
-
-
-# =============================================================================
-# Internal helper: input validation
-# =============================================================================
-
-#' @keywords internal
-.validate_inputs <- function(Y, X, folds, seed, outside_cv, verbose) {
-
-  # Y
-  if (!is.numeric(Y))
-    stop("[predictomics] Y must be a numeric vector.", call. = FALSE)
-  if (!is.null(dim(Y)))
-    stop("[predictomics] Y must be a vector, not a matrix or data frame.",
-         call. = FALSE)
-  if (anyNA(Y))
-    stop("[predictomics] Y contains NA values. Please impute or remove them.",
-         call. = FALSE)
-
-  # X
-  if (!is.matrix(X) || !is.numeric(X))
-    stop("[predictomics] X must be a numeric matrix.", call. = FALSE)
-  if (anyNA(X))
-    stop("[predictomics] X contains NA values. Please impute or remove them.",
-         call. = FALSE)
-
-  # Y / X compatibility
-  if (length(Y) != nrow(X))
-    stop("[predictomics] length(Y) (", length(Y), ") must equal nrow(X) (",
-         nrow(X), ").", call. = FALSE)
-  if (length(Y) < 2L)
-    stop("[predictomics] At least 2 samples are required.", call. = FALSE)
-
-  # folds
-  if (!is.numeric(folds) || length(folds) != 1L || folds < 2L ||
-      folds > length(Y) || folds != as.integer(folds))
-    stop("[predictomics] folds must be an integer >= 2 and <= n (", length(Y),
-         ").", call. = FALSE)
-
-  # seed
-  if (!is.numeric(seed) || length(seed) != 1L)
-    stop("[predictomics] seed must be a single numeric value.", call. = FALSE)
-
-  # outside_cv
-  if (!is.logical(outside_cv) || length(outside_cv) != 1L)
-    stop("[predictomics] outside_cv must be TRUE or FALSE.", call. = FALSE)
-
-  # verbose
-  if (!is.logical(verbose) || length(verbose) != 1L)
-    stop("[predictomics] verbose must be TRUE or FALSE.", call. = FALSE)
-
-  invisible(NULL)
 }
