@@ -118,7 +118,7 @@ run_engineering <- function(X_train, params) {
   # 1. Validate inputs
   # ---------------------------------------------------------------------------
   .validate_X(X_train)
-  .validate_engineering_params(params)
+  # .validate_engineering_params(params)
 
   if (is.null(colnames(X_train))) {
     stop("[predictomics] X_train must have column names for feature engineering.",
