@@ -14,6 +14,9 @@ predict_cv(
   selection_params = NULL,
   model_params = list(method = "lm"),
   outside_cv = FALSE,
+  treatment = NULL,
+  treatment_predictor = FALSE,
+  covariates = NULL,
   verbose = TRUE
 )
 }
@@ -21,10 +24,15 @@ predict_cv(
 \item{Y}{Numeric vector of length n. The response variable to be predicted.}
 
 \item{X}{Numeric matrix of dimensions n (samples) x p (features).
-The predictor matrix. column names should be feature identifiers.}
+The predictor matrix. Column names should be feature identifiers.}
 
 \item{cv_type}{Character string. Type of cross-validation. One of
-\code{"kfold"} (K-fold CV) or \code{"loo"} (leave-one-out CV). Defaults to \code{"kfold"}.}
+\code{"kfold"} (K-fold CV) or \code{"loo"} (leave-one-out CV).
+Defaults to \code{"kfold"}.}
+
+\item{folds}{Positive integer. Number of folds for k-fold CV. Must satisfy
+\code{2 <= folds <= n}. Ignored when \code{cv_type = "loo"}.
+Defaults to \code{10}.}
 
 \item{seed}{Integer. Random seed for reproducible fold assignment in k-fold
 CV. Ignored when \code{cv_type = "loo"}. Defaults to \code{12345}.}
@@ -42,15 +50,26 @@ options. See \code{\link{run_model}} for supported options. Defaults to
 \code{list(method = "lm")} (ordinary least squares).}
 
 \item{outside_cv}{Logical. If \code{TRUE}, engineering and selection steps
-are applied to the full dataset \strong{before} the CV loop. This introduces
-data leakage and may produce biased performance estimates. Defaults to \code{FALSE}.}
+are applied to the full dataset \strong{before} the CV loop. This
+introduces data leakage and may produce biased performance estimates.
+Defaults to \code{FALSE}.}
+
+\item{treatment}{A factor or binary numeric vector of length n encoding
+treatment group membership. If a factor, levels are used as group labels.
+If numeric, must contain only 0 and 1. Pass \code{NULL} (default) if no
+treatment variable is available.}
+
+\item{treatment_predictor}{Logical. If \code{TRUE}, treatment is appended
+to the predictor matrix (after engineering and selection) as a covariate.
+Ignored when \code{treatment = NULL}. Defaults to \code{FALSE}.}
+
+\item{covariates}{A numeric matrix or data frame of dimensions n (samples)
+x q (covariates). Covariates are protected predictors always included in
+model fitting. Factor columns are one-hot encoded via
+\code{model.matrix}. Pass \code{NULL} (default) for no covariates.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints progress messages throughout.
 Defaults to \code{TRUE}.}
-
-\item{k}{Positive integer. Number of folds for k-fold CV. Must satisfy
-\code{2 <= k <= n}. Ignored when \code{cv_type = "loo"}.
-Defaults to \code{10}.}
 }
 \value{
 An object of class \code{"predictomics"}, which is a named list
@@ -62,6 +81,12 @@ original sample order.}
 values, in original sample order.}
 \item{\code{fold_ids}}{Integer vector of fold assignments (1 to
 \code{folds}), in original sample order.}
+\item{\code{treatment}}{The \code{treatment} argument as supplied, or
+\code{NULL}.}
+\item{\code{treatment_predictor}}{Logical. Whether treatment was used
+as a predictor.}
+\item{\code{covariates}}{The \code{covariates} argument as supplied, or
+\code{NULL}.}
 \item{\code{engineering_params}}{The \code{engineering_params} argument
 as supplied.}
 \item{\code{selection_params}}{The \code{selection_params} argument as
@@ -69,6 +94,8 @@ supplied.}
 \item{\code{model_params}}{The \code{model_params} argument as
 supplied.}
 \item{\code{outside_cv}}{Logical. Whether outside-CV mode was used.}
+\item{\code{cv_type}}{Character string. The CV type used.}
+\item{\code{n_folds}}{Integer. Number of folds used.}
 \item{\code{n_samples}}{Integer. Number of samples.}
 \item{\code{n_features_input}}{Integer. Number of features in the input
 \code{X}.}
@@ -94,6 +121,20 @@ If \code{outside_cv = TRUE}, engineering and selection steps are instead
 applied to the full dataset before the CV loop begins.
 \strong{This will produce optimistically biased performance estimates and is
 encouraged to be used for exploratory analysis only.}
+
+If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
+treatment is appended to the predictor matrix after engineering and
+selection, immediately before model fitting. Treatment is never passed
+through engineering or selection. If \code{treatment} is a factor with
+k levels, k-1 dummy columns are created using the first level as reference
+(via \code{model.matrix}). If \code{treatment} is binary numeric, it is
+appended as a single column named \code{"treatment"}.
+
+If \code{covariates} is supplied, it is one-hot encoded once before the CV
+loop and appended to the predictor matrix after engineering, selection, and
+treatment, immediately before model fitting. Covariates are never passed
+through engineering or selection. Covariate column names must not clash with
+feature names in \code{X} or treatment column names.
 }
 \examples{
 \dontrun{
@@ -105,8 +146,19 @@ colnames(X) <- paste0("gene", seq_len(p))
 rownames(X) <- paste0("sample", seq_len(n))
 Y <- X[, 1] * 2 + rnorm(n)
 
-# Basic usage: 5-fold CV with default OLS model
-result <- predict_cv(Y = Y, X = X)}
+# Basic usage: 10-fold CV with default OLS model
+result <- predict_cv(Y = Y, X = X)
+
+# With binary treatment as predictor
+treatment <- sample(c(0L, 1L), n, replace = TRUE)
+result <- predict_cv(Y = Y, X = X, treatment = treatment,
+                     treatment_predictor = TRUE)
+
+# With covariates
+covariates <- data.frame(age = rnorm(n), sex = factor(sample(c("M","F"), n,
+                         replace = TRUE)))
+result <- predict_cv(Y = Y, X = X, covariates = covariates)
+}
 
 }
 \seealso{

@@ -77,9 +77,17 @@ print.predictomics <- function(x, digits = 4, ...) {
   cat("\nCall:\n ")
   cat(deparse(x$call), "\n")
 
+  cov_label <- if (is.null(x$covariates)) {
+    "none"
+  } else {
+    paste0(ncol(x$covariates), " variable",
+           if (ncol(x$covariates) > 1L) "s" else "")
+  }
+
   cat("\nData:\n")
-  cat("  Samples  :", x$n_samples, "\n")
-  cat("  Features :", x$n_features_input, "\n")
+  cat("  Samples    :", x$n_samples, "\n")
+  cat("  Features   :", x$n_features_input, "\n")
+  cat("  Covariates :", cov_label, "\n")
 
   cat("\nCross-validation:\n")
   cat("  Type     :", cv_label, "\n")

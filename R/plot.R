@@ -13,6 +13,8 @@
 #' predicted (y-axis) values from a \code{predictomics} result object.
 #' A diagonal reference line (y = x) representing perfect prediction is
 #' included. sRMSE and R² are annotated in the top left corner of the plot.
+#' If a \code{treatment} variable is present in the result object, points are
+#' coloured by treatment group.
 #'
 #' @details
 #' Axis limits are computed as the range of the combined observed and predicted
@@ -25,10 +27,15 @@
 #' standard deviation of the observed values. Both are computed via
 #' \code{\link{metrics.predictomics}}.
 #'
+#' When \code{treatment} is present, a colorblind-friendly palette from
+#' \code{RColorBrewer} (\code{"Set2"}) is used to distinguish groups.
+#' When \code{treatment} is absent, all points are drawn in
+#' \code{point_colour}.
+#'
 #' @param x A \code{predictomics} object returned by \code{\link{predict_cv}}.
-#' @param point_colour Character string. Colour of scatter plot points.
-#'   Defaults to \code{"steelblue"}.
-#' @param point_alpha Numeric in [0, 1]. Transparency of points.
+#' @param point_colour Character string. Colour of points when no treatment
+#'   variable is present. Defaults to \code{"steelblue"}.
+#' @param point_alpha Numeric between 0 and 1. Transparency of points.
 #'   Defaults to \code{0.6}.
 #' @param point_size Numeric. Size of points. Defaults to \code{2}.
 #' @param annotation_pos Character string. Position of the metric annotation.
@@ -43,6 +50,10 @@
 #' @examples
 #' \dontrun{
 #' result <- predict_cv(Y = Y, X = X, model_params = list(method = "glmnet"))
+#' plot(result)
+#'
+#' # With treatment colouring
+#' result <- predict_cv(Y = Y, X = X, treatment = treatment)
 #' plot(result)
 #'
 #' # Customise appearance
@@ -84,10 +95,10 @@ plot.predictomics <- function(x,
   # ---------------------------------------------------------------------------
   # 3. Annotation position
   # ---------------------------------------------------------------------------
-  ann_x <- if (annotation_pos == "topleft")    lims[1] + diff(lims) * 0.02
-            else                                lims[2] - diff(lims) * 0.40
-  ann_y <- if (annotation_pos == "topleft")    lims[2] - diff(lims) * 0.02
-            else                                lims[1] + diff(lims) * 0.12
+  ann_x <- if (annotation_pos == "topleft") lims[1] + diff(lims) * 0.02
+  else                             lims[2] - diff(lims) * 0.40
+  ann_y <- if (annotation_pos == "topleft") lims[2] - diff(lims) * 0.02
+  else                             lims[1] + diff(lims) * 0.12
   ann_vjust <- if (annotation_pos == "topleft") 1 else 0
 
   ann_label <- paste0(
@@ -96,20 +107,57 @@ plot.predictomics <- function(x,
   )
 
   # ---------------------------------------------------------------------------
-  # 4. Build plot
+  # 4. Prepare plot data frame and treatment colouring
   # ---------------------------------------------------------------------------
+  has_treatment <- !is.null(x$treatment)
+
   plot_df <- data.frame(observed = obs, predicted = pred)
 
-  p <- ggplot2::ggplot(plot_df,
-         ggplot2::aes(x = observed, y = predicted)) +
+  if (has_treatment) {
+    # Convert binary numeric to a labelled factor for the legend
+    trt <- x$treatment
+    if (is.numeric(trt)) {
+      trt <- factor(trt, levels = c(0, 1),
+                    labels = c("Control (0)", "Active (1)"))
+    }
+    plot_df$treatment_group <- trt
+  }
+
+  # ---------------------------------------------------------------------------
+  # 5. Build plot
+  # ---------------------------------------------------------------------------
+  p <- ggplot2::ggplot(
+    plot_df,
+    ggplot2::aes(x = observed, y = predicted)
+  ) +
 
     # Reference line (perfect prediction)
     ggplot2::geom_abline(slope = 1, intercept = 0,
-                         linetype = "dashed", colour = "grey40", linewidth = 0.6) +
+                         linetype = "dashed", colour = "grey40",
+                         linewidth = 0.6) +
 
-    # Points
-    ggplot2::geom_point(colour = point_colour, alpha = point_alpha,
-                        size = point_size) +
+    # Points — coloured by treatment if available, fixed colour otherwise
+    {
+      if (has_treatment) {
+        ggplot2::geom_point(
+          ggplot2::aes(colour = treatment_group),
+          alpha = point_alpha,
+          size  = point_size
+        )
+      } else {
+        ggplot2::geom_point(
+          colour = point_colour,
+          alpha  = point_alpha,
+          size   = point_size
+        )
+      }
+    } +
+
+    # Colour scale for treatment groups (colorblind-friendly)
+    {
+      if (has_treatment)
+        ggplot2::scale_colour_brewer(palette = "Set2", name = "Treatment")
+    } +
 
     # Metric annotation
     ggplot2::annotate("text",
@@ -126,9 +174,9 @@ plot.predictomics <- function(x,
 
     # Labels
     ggplot2::labs(
-      x       = "Observed",
-      y       = "CV Predicted",
-      title   = "Cross-validated prediction",
+      x        = "Observed",
+      y        = "CV Predicted",
+      title    = "Cross-validated prediction",
       subtitle = paste0("n = ", x$n_samples, "  |  method = ",
                         x$model_params$method)
     ) +
@@ -136,11 +184,12 @@ plot.predictomics <- function(x,
     # Theme
     ggplot2::theme_bw() +
     ggplot2::theme(
-      plot.title    = ggplot2::element_text(face = "bold", size = 12),
-      plot.subtitle = ggplot2::element_text(colour = "grey40", size = 10),
-      axis.title    = ggplot2::element_text(size = 11),
-      axis.text     = ggplot2::element_text(size = 10),
+      plot.title       = ggplot2::element_text(face = "bold", size = 12),
+      plot.subtitle    = ggplot2::element_text(colour = "grey40", size = 10),
+      axis.title       = ggplot2::element_text(size = 11),
+      axis.text        = ggplot2::element_text(size = 10),
       panel.grid.minor = ggplot2::element_blank(),
+      legend.position  = if (has_treatment) "right" else "none",
       ...
     )
 

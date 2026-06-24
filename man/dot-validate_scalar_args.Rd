@@ -4,9 +4,19 @@
 \alias{.validate_scalar_args}
 \title{Validate simple scalar arguments}
 \usage{
-.validate_scalar_args(folds, n, seed, cv_type, outside_cv, verbose)
+.validate_scalar_args(
+  cv_type,
+  folds,
+  n,
+  seed,
+  outside_cv,
+  verbose,
+  treatment_predictor = FALSE
+)
 }
 \arguments{
+\item{cv_type}{type of CV ("kfold" or "loo")}
+
 \item{folds}{Number of CV folds.}
 
 \item{n}{Integer. Number of samples, used to bound \code{folds}.}
@@ -16,6 +26,8 @@
 \item{outside_cv}{Logical flag.}
 
 \item{verbose}{Logical flag.}
+
+\item{treatment_predictor}{Logical flag.}
 }
 \value{
 Invisibly returns \code{NULL} if validation passes.

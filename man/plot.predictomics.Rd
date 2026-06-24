@@ -16,10 +16,10 @@
 \arguments{
 \item{x}{A \code{predictomics} object returned by \code{\link{predict_cv}}.}
 
-\item{point_colour}{Character string. Colour of scatter plot points.
-Defaults to \code{"steelblue"}.}
+\item{point_colour}{Character string. Colour of points when no treatment
+variable is present. Defaults to \code{"steelblue"}.}
 
-\item{point_alpha}{Numeric in \link{0, 1}. Transparency of points.
+\item{point_alpha}{Numeric between 0 and 1. Transparency of points.
 Defaults to \code{0.6}.}
 
 \item{point_size}{Numeric. Size of points. Defaults to \code{2}.}
@@ -37,6 +37,8 @@ Produces a scatter plot of observed (x-axis) versus cross-validated
 predicted (y-axis) values from a \code{predictomics} result object.
 A diagonal reference line (y = x) representing perfect prediction is
 included. sRMSE and R² are annotated in the top left corner of the plot.
+If a \code{treatment} variable is present in the result object, points are
+coloured by treatment group.
 }
 \details{
 Axis limits are computed as the range of the combined observed and predicted
@@ -48,10 +50,19 @@ are visually unambiguous.
 R² is the squared Pearson correlation. sRMSE is RMSE divided by the
 standard deviation of the observed values. Both are computed via
 \code{\link{metrics.predictomics}}.
+
+When \code{treatment} is present, a colorblind-friendly palette from
+\code{RColorBrewer} (\code{"Set2"}) is used to distinguish groups.
+When \code{treatment} is absent, all points are drawn in
+\code{point_colour}.
 }
 \examples{
 \dontrun{
 result <- predict_cv(Y = Y, X = X, model_params = list(method = "glmnet"))
+plot(result)
+
+# With treatment colouring
+result <- predict_cv(Y = Y, X = X, treatment = treatment)
 plot(result)
 
 # Customise appearance
