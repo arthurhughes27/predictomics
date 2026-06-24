@@ -118,7 +118,7 @@ run_engineering <- function(X_train, params) {
   # 1. Validate inputs
   # ---------------------------------------------------------------------------
   .validate_X(X_train)
-  # .validate_engineering_params(params)
+  .validate_engineering_params(params)
 
   if (is.null(colnames(X_train))) {
     stop("[predictomics] X_train must have column names for feature engineering.",
@@ -304,38 +304,33 @@ predict_engineering <- function(fit, X_new) {
     gs_genes <- intersect(genesets[[gs_name]], feature_names)
     X_sub    <- X[, gs_genes, drop = FALSE]
 
-    X_agg[, i] <- switch(agg_method,
-
-      mean   = rowMeans(X_sub),
-
-      median = apply(X_sub, 1, median),
-
-      sum    = rowSums(X_sub),
-
-      pc1    = {
-        if (is_train) {
-          do_scale  <- col_transform != "z"
-          pca       <- prcomp(X_sub, center = do_scale, scale. = do_scale)
-          loadings  <- pca$rotation[, 1]
-          centers   <- if (do_scale) pca$center else NULL
-          scales    <- if (do_scale) pca$scale  else NULL
-          pc1_loadings_out[[gs_name]] <<- list(
-            loadings = loadings,
-            center   = centers,
-            scale    = scales
-          )
-          as.numeric(X_sub %*% loadings)
+    if (agg_method == "pc1") {
+      if (is_train) {
+        do_scale <- col_transform != "z"
+        pca      <- prcomp(X_sub, center = do_scale, scale. = do_scale)
+        loadings <- pca$rotation[, 1]
+        pc1_loadings_out[[gs_name]] <- list(
+          loadings = loadings,
+          center   = if (do_scale) pca$center else NULL,
+          scale    = if (do_scale) pca$scale  else NULL
+        )
+        X_agg[, i] <- as.numeric(X_sub %*% loadings)
+      } else {
+        ls       <- pc1_loadings[[gs_name]]
+        X_sub_sc <- if (!is.null(ls$center)) {
+          scale(X_sub, center = ls$center, scale = ls$scale)
         } else {
-          ls         <- pc1_loadings[[gs_name]]
-          X_sub_sc <- if (!is.null(ls$center)) {
-            scale(X_sub, center = ls$center, scale = ls$scale)
-          } else {
-            X_sub
-          }
-          as.numeric(X_sub_sc %*% ls$loadings)
+          X_sub
         }
+        X_agg[, i] <- as.numeric(X_sub_sc %*% ls$loadings)
       }
-    )
+    } else {
+      X_agg[, i] <- switch(agg_method,
+                           mean   = rowMeans(X_sub),
+                           median = apply(X_sub, 1, median),
+                           sum    = rowSums(X_sub)
+      )
+    }
   }
 
   if (!is.null(pc1_loadings_out))

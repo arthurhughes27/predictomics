@@ -202,6 +202,46 @@
   invisible(NULL)
 }
 
+# -----------------------------------------------------------------------------
+#' Validate engineering_params
+#'
+#' @description
+#' Checks that \code{engineering_params} contains valid and consistent
+#' entries for \code{col_transform}, \code{genesets}, and \code{agg_method}.
+#'
+#' @param params The \code{engineering_params} list.
+#' @return Invisibly returns \code{NULL} if validation passes.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.validate_engineering_params <- function(params) {
+
+  col_transform <- params$col_transform %||% "none"
+  if (!col_transform %in% c("none", "z"))
+    stop("[predictomics] engineering_params$col_transform must be 'none' or 'z'.",
+         call. = FALSE)
+
+  genesets <- params$genesets
+  if (!is.null(genesets)) {
+
+    if (!is.list(genesets) || is.null(names(genesets)) ||
+        any(names(genesets) == ""))
+      stop("[predictomics] engineering_params$genesets must be a named list.",
+           call. = FALSE)
+
+    if (!all(vapply(genesets, is.character, logical(1))))
+      stop("[predictomics] Each element of engineering_params$genesets must ",
+           "be a character vector of feature names.", call. = FALSE)
+
+    agg_method <- params$agg_method
+    if (is.null(agg_method) || !agg_method %in% c("mean", "median", "sum", "pc1"))
+      stop("[predictomics] engineering_params$agg_method must be one of ",
+           "'mean', 'median', 'sum', or 'pc1' when genesets are provided.",
+           call. = FALSE)
+  }
+
+  invisible(NULL)
+}
+
 
 
 # -----------------------------------------------------------------------------
