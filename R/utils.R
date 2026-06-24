@@ -131,3 +131,30 @@
 
   mat
 }
+
+
+# -----------------------------------------------------------------------------
+#' Coerce a treatment variable to a binary numeric vector (0/1)
+#'
+#' @description
+#' Safely converts a treatment variable to a binary numeric vector regardless
+#' of whether it was supplied as a binary numeric or a two-level factor.
+#' For binary numeric input, values are returned unchanged. For a factor,
+#' the first level is mapped to 0 and the second level to 1, matching the
+#' convention used by \code{model.matrix} and \code{.prepare_treatment_matrix}.
+#'
+#' This function is used in the outside-CV branch of \code{\link{predict_cv}}
+#' before passing treatment to \code{\link{run_selection}} for the
+#' \code{"rise"} method, which requires a strict 0/1 numeric vector.
+#'
+#' @param treatment A binary numeric vector (0/1) or a two-level factor.
+#' @return A binary integer vector with values 0 and 1.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.coerce_treatment_binary <- function(treatment) {
+  if (is.factor(treatment)) {
+    as.integer(treatment) - 1L
+  } else {
+    as.integer(treatment)
+  }
+}

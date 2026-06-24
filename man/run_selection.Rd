@@ -4,34 +4,76 @@
 \alias{run_selection}
 \title{Filter-based feature selection on a training matrix}
 \usage{
-run_selection(X_train, Y_train = NULL, covariates = NULL, params)
+run_selection(
+  X_train,
+  Y_train = NULL,
+  covariates = NULL,
+  treatment = NULL,
+  params
+)
 }
 \arguments{
 \item{X_train}{Numeric matrix of dimensions n (samples) x p (features).
 Training predictor matrix. Must have column names.}
 
 \item{Y_train}{Numeric vector of length n. Training response variable.
-Required for \code{"pearson"} and \code{"spearman"}; ignored for
-\code{"variance"}.}
+Required for \code{"pearson"}, \code{"spearman"}, and
+\code{"relative_gain"}; ignored for \code{"variance"}.}
 
-\item{covariates}{A numeric matrix of dimensions n (samples) x q
-(covariates) to include in the baseline model for supervised filter
-methods that require a baseline (e.g. \code{"relative_gain"}). Ignored
-for \code{"variance"}, \code{"pearson"}, and \code{"spearman"}.
-Pass \code{NULL} (default) for no covariates.}
+\item{covariates}{A numeric matrix of dimensions n x q to include in the
+baseline model for \code{"relative_gain"}. Ignored for all other methods.
+Pass \code{NULL} (default) for no covariates (intercept-only baseline).}
+
+\item{treatment}{A binary numeric vector of length n with values 0 and 1,
+encoding treatment group membership. Required for \code{"rise"}; ignored
+for all other methods. Pass \code{NULL} (default) if not applicable.}
 
 \item{params}{A named list of selection parameters with the following
 elements:
 \describe{
 \item{\code{method}}{Character string. One of \code{"variance"},
-\code{"pearson"}, or \code{"spearman"}. Required.}
+\code{"pearson"}, \code{"spearman"}, or \code{"relative_gain"}.
+Required.}
 \item{\code{top_n}}{Positive integer. Number of top-ranked features to
 retain. Takes precedence over \code{threshold} if both are supplied.
 Either \code{top_n} or \code{threshold} must be specified.}
 \item{\code{threshold}}{Numeric. Minimum score a feature must achieve
 to be retained. Used only when \code{top_n} is \code{NULL}. For
-\code{"variance"}, this is a minimum variance; for \code{"pearson"}
-and \code{"spearman"}, a minimum absolute correlation.}
+\code{"variance"}, a minimum variance; for \code{"pearson"} and
+\code{"spearman"}, a minimum absolute correlation; for
+\code{"relative_gain"}, a minimum gain; for \code{"rise"}, a
+maximum adjusted p-value (e.g. \code{0.05}).}
+\item{\code{rise_alpha}}{Numeric. Significance level passed to
+\code{rise.screen()} as \code{alpha}. Defaults to \code{0.05}.}
+\item{\code{rise_power_want_s}}{Numeric in (0,1). Desired power for
+surrogate test, passed as \code{power.want.s}. Either this or
+\code{rise_epsilon} must be specified.}
+\item{\code{rise_epsilon}}{Numeric in (0,1). Non-inferiority margin,
+passed as \code{epsilon}. Either this or \code{rise_power_want_s}
+must be specified.}
+\item{\code{rise_u_y_hyp}}{Numeric. Hypothesised treatment effect on
+the primary response on the probability scale, passed as
+\code{u.y.hyp}. Defaults to \code{NULL}.}
+\item{\code{rise_p_correction}}{Character. P-value adjustment method
+passed to \code{p.adjust()}, passed as \code{p.correction}.
+Defaults to \code{"BH"}.}
+\item{\code{rise_n_cores}}{Integer. Number of cores for parallel
+computation, passed as \code{n.cores}. Defaults to \code{1}.}
+\item{\code{rise_alternative}}{Character. Alternative hypothesis type,
+passed as \code{alternative}. One of \code{"less"} or
+\code{"two.sided"}. Defaults to \code{"two.sided"}.}
+\item{\code{rise_paired}}{Logical. Whether data are paired, passed as
+\code{paired}. Defaults to \code{FALSE}.}
+\item{\code{metric}}{Character string. Metric used to evaluate
+prediction quality in \code{"relative_gain"}. One of \code{"rmse"},
+\code{"srmse"}, \code{"r2"}, or \code{"spearman"}. Defaults to
+\code{"rmse"}. Ignored for other methods.}
+\item{\code{inner_folds}}{Positive integer. Number of inner CV folds
+for \code{"relative_gain"}. Defaults to \code{5}. Ignored for other
+methods.}
+\item{\code{seed}}{Integer. Random seed for inner fold assignment in
+\code{"relative_gain"}. Defaults to \code{12345}. Ignored for other
+methods.}
 }}
 }
 \value{
@@ -41,10 +83,10 @@ A named list containing:
 names, in decreasing order of score.}
 \item{\code{selection_method}}{Character string. The method used.}
 \item{\code{selection_scores}}{Named numeric vector of scores for
-\emph{all} features, in decreasing order. Useful for diagnostics
-and inspection.}
+\emph{all} features, in decreasing order. For
+\code{"relative_gain"}, scores are the gain values.}
 \item{\code{top_n}}{Integer or \code{NULL}. The \code{top_n} value
-used, after resolving precedence with \code{threshold}.}
+used after resolving precedence with \code{threshold}.}
 \item{\code{threshold}}{Numeric or \code{NULL}. The \code{threshold}
 value used, or \code{NULL} if \code{top_n} was applied.}
 }
@@ -52,18 +94,30 @@ value used, or \code{NULL} if \code{top_n} was applied.}
 \description{
 Scores and ranks features (columns) of \code{X_train} according to a
 filter criterion computed on the training data only, then retains either
-the top \code{top_n} features or all features whose score exceeds
+the top \code{top_n} features or all features whose score meets
 \code{threshold}. If both are supplied, \code{top_n} takes precedence.
 }
 \details{
-Three filter methods are supported:
+Five filter methods are supported:
 \itemize{
 \item \code{"variance"}: features are ranked by their variance across
-training samples, computed via \code{var()}. Does not use \code{Y_train}.
-\item \code{"pearson"}: features are ranked by the absolute value of their
-Pearson correlation with \code{Y_train}.
-\item \code{"spearman"}: features are ranked by the absolute value of their
-Spearman rank correlation with \code{Y_train}.
+training samples. Does not use \code{Y_train}.
+\item \code{"pearson"}: features are ranked by the absolute value of
+their Pearson correlation with \code{Y_train}.
+\item \code{"spearman"}: features are ranked by the absolute value of
+their Spearman rank correlation with \code{Y_train}.
+\item \code{"relative_gain"}: features are ranked by their cross-validated
+prediction gain over a baseline model. For each feature j, an inner CV
+loop is run on \code{X_train}. In each inner fold, a baseline model
+(covariates only, or intercept-only if no covariates are provided) and
+a feature model (covariates + feature j) are fitted on the inner
+training partition and used to predict the inner test partition. The
+gain is the difference in predictive performance between the feature
+model and the baseline model, standardised so that positive gain always
+indicates that feature j improves prediction. Inner CV fold assignments
+are generated once and reused across all features, and the baseline
+predictions are computed once per inner fold. Supported metrics:
+\code{"rmse"}, \code{"srmse"}, \code{"r2"}, \code{"spearman"}.
 }
 
 All scores are computed on \code{X_train} only. The selected feature names
@@ -72,8 +126,8 @@ are returned and used in \code{\link{predict_cv}} to subset both
 \code{X[, selected_features, drop = FALSE]}. No companion
 \code{predict_selection} function is required.
 
-Scores for all features (not only selected ones) are returned in
-\code{selection_scores} for diagnostic purposes.
+Scores for all features are returned in \code{selection_scores} for
+diagnostic purposes.
 }
 \examples{
 \dontrun{
@@ -85,16 +139,17 @@ Y <- X[, 1] * 2 + rnorm(40)
 # Variance filter: retain top 50 features
 result <- run_selection(X, Y,
   params = list(method = "variance", top_n = 50))
-length(result$selected_features)  # 50
 
-# Pearson correlation filter: retain features with |r| > 0.2
+# Relative gain: retain features with positive gain over null model
 result <- run_selection(X, Y,
-  params = list(method = "pearson", threshold = 0.2))
+  params = list(method = "relative_gain", threshold = 0,
+                metric = "rmse", inner_folds = 5))
 
-# Spearman correlation filter: top 100 features
-# (top_n takes precedence over threshold when both supplied)
-result <- run_selection(X, Y,
-  params = list(method = "spearman", top_n = 100, threshold = 0.1))
+# Relative gain with covariates
+covariates <- matrix(rnorm(40 * 2), nrow = 40,
+                     dimnames = list(NULL, c("age", "sex")))
+result <- run_selection(X, Y, covariates = covariates,
+  params = list(method = "relative_gain", threshold = 0, metric = "r2"))
 }
 
 }

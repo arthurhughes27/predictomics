@@ -244,6 +244,9 @@ predict_cv <- function(Y,
       sel_fit     <- run_selection(X_train    = X_processed,
                                    Y_train    = Y,
                                    covariates = covariate_mat,
+                                   treatment  = if (!is.null(treatment))
+                                     .coerce_treatment_binary(treatment)
+                                   else NULL,
                                    params     = selection_params)
       X_processed <- X_processed[, sel_fit$selected_features, drop = FALSE]
     }
@@ -253,6 +256,9 @@ predict_cv <- function(Y,
   # 6. Cross-validation loop
   # ---------------------------------------------------------------------------
   predictions <- numeric(n)
+
+  # Initialise per-fold selection diagnostics (NULL if no selection performed)
+  fold_selection_diagnostics <- if (!is.null(selection_params)) vector("list", folds) else NULL
 
   for (k in seq_len(folds)) {
 
@@ -280,10 +286,18 @@ predict_cv <- function(Y,
         covariates = if (!is.null(covariate_mat))
           covariate_mat[train_idx, , drop = FALSE]
         else NULL,
+        treatment  = if (!is.null(treatment)) treatment[train_idx] else NULL,
         params     = selection_params
       )
       X_train <- X_train[, sel_fit$selected_features, drop = FALSE]
       X_test  <- X_test[,  sel_fit$selected_features, drop = FALSE]
+
+      # Store per-fold diagnostics
+      fold_selection_diagnostics[[k]] <- list(
+        selected_features = sel_fit$selected_features,
+        selection_scores  = sel_fit$selection_scores,
+        n_selected        = length(sel_fit$selected_features)
+      )
     }
 
     # -- Append protected predictors (treatment then covariates) -------------
@@ -313,21 +327,22 @@ predict_cv <- function(Y,
   # ---------------------------------------------------------------------------
   structure(
     list(
-      observed            = Y,
-      predicted           = predictions,
-      fold_ids            = fold_ids,
-      treatment           = treatment,
-      treatment_predictor = treatment_predictor,
-      covariates          = covariates,
-      engineering_params  = engineering_params,
-      selection_params    = selection_params,
-      model_params        = model_params,
-      outside_cv          = outside_cv,
-      cv_type             = cv_type,
-      n_folds             = folds,
-      n_samples           = n,
-      n_features_input    = p,
-      call                = cl
+      observed                    = Y,
+      predicted                   = predictions,
+      fold_ids                    = fold_ids,
+      treatment                   = treatment,
+      treatment_predictor         = treatment_predictor,
+      covariates                  = covariates,
+      engineering_params          = engineering_params,
+      selection_params            = selection_params,
+      model_params                = model_params,
+      outside_cv                  = outside_cv,
+      cv_type                     = cv_type,
+      n_folds                     = folds,
+      n_samples                   = n,
+      n_features_input            = p,
+      fold_selection_diagnostics  = fold_selection_diagnostics,
+      call                        = cl
     ),
     class = "predictomics"
   )

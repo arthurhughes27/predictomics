@@ -263,21 +263,19 @@
 #' Validate selection_params
 #'
 #' @description
-#' Checks that \code{selection_params} specifies a supported method, that
-#' exactly one of \code{top_n} or \code{threshold} is specified (or both,
-#' since \code{top_n} takes precedence), and that their values are valid
-#' relative to the number of available features \code{p}.
+#' Checks that \code{selection_params} specifies a supported method, that at
+#' least one of \code{top_n} or \code{threshold} is provided, and that their
+#' values are valid. For \code{"relative_gain"}, also validates
+#' \code{metric} and \code{inner_folds}.
 #'
 #' @param params The \code{selection_params} list.
-#' @param p Integer. Number of features in \code{X_train}, used to bound
-#'   \code{top_n}.
+#' @param p Integer. Number of features in \code{X_train}.
 #' @return Invisibly returns \code{NULL} if validation passes.
 #' @keywords internal
 # -----------------------------------------------------------------------------
 .validate_selection_params <- function(params, p) {
 
-  # method
-  supported <- c("variance", "pearson", "spearman")
+  supported <- c("variance", "pearson", "spearman", "relative_gain", "rise")
   if (!params$method %in% supported)
     stop("[predictomics] selection_params$method must be one of: ",
          paste(supported, collapse = ", "), ".", call. = FALSE)
@@ -285,12 +283,10 @@
   top_n     <- params$top_n
   threshold <- params$threshold
 
-  # At least one of top_n or threshold must be provided
   if (is.null(top_n) && is.null(threshold))
     stop("[predictomics] selection_params must specify at least one of ",
          "'top_n' or 'threshold'.", call. = FALSE)
 
-  # Validate top_n if provided
   if (!is.null(top_n)) {
     if (!is.numeric(top_n) || length(top_n) != 1L ||
         top_n != as.integer(top_n) || top_n < 1L)
@@ -301,15 +297,55 @@
            "number of available features (", p, ").", call. = FALSE)
   }
 
-  # Validate threshold if provided
   if (!is.null(threshold)) {
-    if (!is.numeric(threshold) || length(threshold) != 1L || threshold < 0)
+    if (!is.numeric(threshold) || length(threshold) != 1L)
       stop("[predictomics] selection_params$threshold must be a single ",
-           "non-negative numeric value.", call. = FALSE)
+           "numeric value.", call. = FALSE)
+  }
+
+  # relative_gain-specific validation
+  if (params$method == "relative_gain") {
+
+    metric <- params$metric %||% "rmse"
+    if (!metric %in% c("rmse", "srmse", "r2", "spearman"))
+      stop("[predictomics] selection_params$metric must be one of: ",
+           "'rmse', 'srmse', 'r2', 'spearman'.", call. = FALSE)
+
+    inner_folds <- params$inner_folds %||% 5L
+    if (!is.numeric(inner_folds) || length(inner_folds) != 1L ||
+        inner_folds != as.integer(inner_folds) || inner_folds < 2L)
+      stop("[predictomics] selection_params$inner_folds must be an integer ",
+           ">= 2.", call. = FALSE)
+  }
+
+  # rise-specific validation
+  if (params$method == "rise") {
+    has_power   <- !is.null(params$rise_power_want_s)
+    has_epsilon <- !is.null(params$rise_epsilon)
+    if (!has_power && !has_epsilon)
+      stop("[predictomics] For method = 'rise', either 'rise_power_want_s' or ",
+           "'rise_epsilon' must be specified in selection_params.", call. = FALSE)
+    if (has_power) {
+      p <- params$rise_power_want_s
+      if (!is.numeric(p) || length(p) != 1L || p <= 0 || p >= 1)
+        stop("[predictomics] selection_params$rise_power_want_s must be a ",
+             "numeric value in (0, 1).", call. = FALSE)
+    }
+    if (has_epsilon) {
+      e <- params$rise_epsilon
+      if (!is.numeric(e) || length(e) != 1L || e <= 0 || e >= 1)
+        stop("[predictomics] selection_params$rise_epsilon must be a numeric ",
+             "value in (0, 1).", call. = FALSE)
+    }
+    alt <- params$rise_alternative %||% "two.sided"
+    if (!alt %in% c("less", "two.sided"))
+      stop("[predictomics] selection_params$rise_alternative must be one of ",
+           "'less' or 'two.sided'.", call. = FALSE)
   }
 
   invisible(NULL)
 }
+
 
 
 # -----------------------------------------------------------------------------
