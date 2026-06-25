@@ -34,8 +34,8 @@ Defaults to \code{"kfold"}.}
 \code{2 <= folds <= n}. Ignored when \code{cv_type = "loo"}.
 Defaults to \code{10}.}
 
-\item{seed}{Integer. Random seed for reproducible fold assignment in k-fold
-CV. Ignored when \code{cv_type = "loo"}. Defaults to \code{12345}.}
+\item{seed}{Integer. Random seed for reproducible fold assignment and
+parallel RNG streams. Defaults to \code{12345}.}
 
 \item{engineering_params}{A named list specifying feature engineering steps
 to apply. See \code{\link{run_engineering}} for supported options. Pass
@@ -99,6 +99,18 @@ supplied.}
 \item{\code{n_samples}}{Integer. Number of samples.}
 \item{\code{n_features_input}}{Integer. Number of features in the input
 \code{X}.}
+\item{\code{fold_selection_diagnostics}}{A list of length
+\code{n_folds}, each element containing \code{selected_features},
+\code{selection_scores}, and \code{n_selected} for that fold.
+\code{NULL} if no explicit selection was performed.}
+\item{\code{outside_cv_selection}}{A list containing
+\code{selected_features}, \code{selection_scores}, and
+\code{n_selected} from outside-CV selection. \code{NULL} if
+\code{outside_cv = FALSE} or no selection was performed.}
+\item{\code{fold_embedded_selection_diagnostics}}{A list of length
+\code{n_folds}, each element containing \code{selected_features}
+and \code{n_selected} from embedded selection (lasso/glmnet).
+\code{NULL} if the model does not perform embedded selection.}
 \item{\code{call}}{The matched call.}
 }
 }
@@ -135,6 +147,19 @@ loop and appended to the predictor matrix after engineering, selection, and
 treatment, immediately before model fitting. Covariates are never passed
 through engineering or selection. Covariate column names must not clash with
 feature names in \code{X} or treatment column names.
+
+\strong{Parallelisation}: the outer CV loop is parallelised via
+\code{future.apply::future_lapply}. To enable parallel execution, set a
+\code{future} plan before calling \code{predict_cv}:
+\preformatted{
+  future::plan(future::multisession, workers = 4)
+  result <- predict_cv(Y, X, ...)
+  future::plan(future::sequential)  # reset after use
+}
+If no plan is set, execution is sequential (the default behaviour).
+Reproducibility is ensured via \code{future.seed} regardless of whether
+parallel or sequential execution is used. Per-fold progress messages are
+suppressed when a parallel plan is active.
 }
 \examples{
 \dontrun{
@@ -148,6 +173,11 @@ Y <- X[, 1] * 2 + rnorm(n)
 
 # Basic usage: 10-fold CV with default OLS model
 result <- predict_cv(Y = Y, X = X)
+
+# With parallelisation
+future::plan(future::multisession, workers = 4)
+result <- predict_cv(Y = Y, X = X)
+future::plan(future::sequential)
 
 # With binary treatment as predictor
 treatment <- sample(c(0L, 1L), n, replace = TRUE)

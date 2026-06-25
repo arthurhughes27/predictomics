@@ -244,6 +244,10 @@
 
 
 
+# =============================================================================
+# Internal helpers
+# =============================================================================
+
 # -----------------------------------------------------------------------------
 #' Validate model_params
 #'
@@ -259,11 +263,13 @@
 # -----------------------------------------------------------------------------
 .validate_model_params <- function(params, n_train) {
 
-  supported <- c("lm", "glmnet", "ranger")
+  # method
+  supported <- c("lm", "glmnet", "ridge", "lasso", "ranger")
   if (!params$method %in% supported)
     stop("[predictomics] model_params$method must be one of: ",
          paste(supported, collapse = ", "), ".", call. = FALSE)
 
+  # inner_folds
   inner_folds <- params$inner_folds %||% 5L
   if (!is.numeric(inner_folds) || length(inner_folds) != 1L ||
       inner_folds != as.integer(inner_folds) || inner_folds < 2L)
@@ -274,10 +280,12 @@
          "less than the number of training samples (", n_train, ").",
          call. = FALSE)
 
+  # tune_grid
   if (!is.null(params$tune_grid) && !is.data.frame(params$tune_grid))
     stop("[predictomics] model_params$tune_grid must be a data frame or NULL.",
          call. = FALSE)
 
+  # tune_length
   tune_length <- params$tune_length
   if (!is.null(tune_length)) {
     if (!is.numeric(tune_length) || length(tune_length) != 1L ||
@@ -286,6 +294,7 @@
            call. = FALSE)
   }
 
+  # seed and fold_id
   seed    <- params$seed    %||% 12345L
   fold_id <- params$fold_id %||% 0L
   if (!is.numeric(seed)    || length(seed)    != 1L)

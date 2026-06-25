@@ -6,10 +6,12 @@
 # hyperparameter tuning via the caret package. Supported models:
 #   - "lm"     : ordinary least squares (no tuning)
 #   - "glmnet" : elastic net regression (alpha, lambda tuned by inner CV)
+#   - "ridge"  : ridge regression via glmnet package (lambda tuned by inner CV)
+#   - "lasso"  : lasso regression via glmnet package (lambda tuned by inner CV)
 #   - "ranger" : random forest via ranger (mtry, min.node.size tuned by inner CV)
 #
-# run_model()    fits a model on training data, performing inner-CV tuning
-#                where applicable.
+# run_model()     fits a model on training data, performing inner-CV tuning
+#                 where applicable.
 # predict_model() applies the fitted model to new data.
 # =============================================================================
 
@@ -20,9 +22,10 @@
 #' @description
 #' Fits a predictive model on the training data \code{X_train} and
 #' \code{Y_train}. For models with hyperparameters (\code{"glmnet"},
-#' \code{"ranger"}), tuning is performed via k-fold cross-validation on the
-#' training data using \code{caret::train}, and the best hyperparameters are
-#' used to refit a final model. For \code{"lm"}, no tuning is performed.
+#' \code{"lasso"}, \code{"ridge"}, \code{"ranger"}), tuning is performed via
+#' k-fold cross-validation on the training data using \code{caret::train}, and
+#' the best hyperparameters are used to refit a final model. For \code{"lm"},
+#' no tuning is performed.
 #'
 #' @details
 #' All models are fitted through \code{caret::train} to provide a uniform
@@ -31,14 +34,19 @@
 #' in caret's formula handling. The same sanitisation must be applied to
 #' \code{X_new} in \code{\link{predict_model}}, which is handled automatically.
 #'
-#' A deterministic per-fold seed is set immediately before each
-#' \code{caret::train} call to ensure reproducibility of the inner CV without
-#' interfering with the outer CV loop. The seed used is \code{seed + fold_id}.
+#' Reproducibility of the inner CV is ensured via the \code{future.seed}
+#' argument passed to \code{future.apply::future_lapply} in
+#' \code{\link{predict_cv}}, which manages per-worker RNG streams. No manual
+#' \code{set.seed()} call is made inside \code{run_model} to avoid
+#' interfering with these streams.
 #'
-#' **glmnet**: tunes \code{alpha} (mixing parameter, 0 = ridge, 1 = LASSO)
-#' and \code{lambda} (regularisation strength) via inner CV. If \code{X_train}
-#' contains only a single feature, falls back to \code{"lm"} with a warning,
-#' as \code{glmnet} requires at least two predictors.
+#' **glmnet/lasso/ridge**: tunes \code{lambda} (regularisation strength) via
+#' inner CV. For \code{"glmnet"}, \code{alpha} is also tuned. For
+#' \code{"lasso"} and \code{"ridge"}, \code{alpha} is fixed at 1 and 0
+#' respectively. If \code{X_train} contains only a single feature, falls back
+#' to \code{"lm"} with a warning. For \code{"lasso"} and \code{"glmnet"}
+#' (when alpha > 0), non-zero coefficient features are stored in
+#' \code{selected_features} of the returned fit object.
 #'
 #' **ranger**: tunes \code{mtry} (number of variables sampled per split),
 #' \code{min.node.size} (minimum node size), and \code{splitrule}
@@ -52,7 +60,8 @@
 #'   for the \code{model_params} argument. Supported fields:
 #'   \describe{
 #'     \item{\code{method}}{Character string. One of \code{"lm"},
-#'       \code{"glmnet"}, or \code{"ranger"}. Required.}
+#'       \code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, or \code{"ranger"}.
+#'       Required.}
 #'     \item{\code{inner_folds}}{Positive integer. Number of inner CV folds
 #'       for hyperparameter tuning. Defaults to \code{5}. Ignored for
 #'       \code{"lm"}.}
@@ -61,21 +70,25 @@
 #'     \item{\code{tune_length}}{Positive integer. Passed to caret's
 #'       \code{tuneLength} to auto-generate a grid of this size. Ignored if
 #'       \code{tune_grid} is provided. Optional.}
-#'     \item{\code{seed}}{Integer. Base seed for reproducible inner CV.
-#'       Defaults to \code{12345}.}
-#'     \item{\code{fold_id}}{Integer. Outer fold index, used to derive a
-#'       per-fold seed (\code{seed + fold_id}). Defaults to \code{0}.}
+#'     \item{\code{fold_id}}{Integer. Outer fold index, stored in the result
+#'       for reference. Defaults to \code{0}. Reproducibility is managed by
+#'       \code{future.apply} at the outer CV level.}
 #'   }
 #'
 #' @return A named list of class \code{"predictomics_model"} containing:
 #'   \describe{
 #'     \item{\code{caret_fit}}{The \code{caret} train object.}
-#'     \item{\code{method}}{Character string. The model method used.}
+#'     \item{\code{method}}{Character string. The model method as supplied
+#'       by the user (e.g. \code{"lasso"}, not the resolved \code{"glmnet"}).}
 #'     \item{\code{best_params}}{Data frame. The best hyperparameters selected
 #'       by inner CV (\code{NA} for \code{"lm"}).}
 #'     \item{\code{inner_folds}}{Integer. Number of inner CV folds used.}
 #'     \item{\code{col_names}}{Character vector. Sanitised column names used
 #'       during fitting, required for consistent prediction.}
+#'     \item{\code{selected_features}}{Character vector of features with
+#'       non-zero coefficients at the best lambda, for \code{"lasso"} and
+#'       \code{"glmnet"} when alpha > 0. \code{NULL} for all other methods
+#'       and for \code{"ridge"}.}
 #'   }
 #'
 #' @seealso \code{\link{predict_model}}, \code{\link{predict_cv}}
@@ -89,6 +102,10 @@
 #'
 #' # OLS
 #' fit <- run_model(X_train, Y_train, params = list(method = "lm"))
+#'
+#' # Lasso with default lambda grid
+#' fit <- run_model(X_train, Y_train, params = list(method = "lasso"))
+#' fit$selected_features  # non-zero coefficient features
 #'
 #' # Elastic net with default tuning grid
 #' fit <- run_model(X_train, Y_train, params = list(method = "glmnet",
@@ -122,12 +139,24 @@ run_model <- function(X_train, Y_train, params) {
   # ---------------------------------------------------------------------------
   # 2. Extract and resolve parameters
   # ---------------------------------------------------------------------------
-  method       <- params$method
-  inner_folds  <- params$inner_folds  %||% 5L
-  tune_grid    <- params$tune_grid
-  tune_length  <- params$tune_length  %||% 3L
-  seed         <- params$seed         %||% 12345L
-  fold_id      <- params$fold_id      %||% 0L
+  method      <- params$method
+  inner_folds <- params$inner_folds %||% 5L
+  tune_grid   <- params$tune_grid
+  tune_length <- params$tune_length %||% 3L
+  fold_id     <- params$fold_id     %||% 0L
+
+  # Store the user-supplied method name for the result object
+  user_method <- method
+
+  # Resolve lasso/ridge to glmnet with fixed alpha
+  fixed_alpha <- NULL
+  if (method %in% c("ridge", "lasso")) {
+    fixed_alpha <- if (method == "ridge") 0 else 1
+    if (is.null(tune_grid))
+      tune_grid <- expand.grid(alpha  = fixed_alpha,
+                               lambda = 10^seq(-3, 1, length = 50))
+    method <- "glmnet"
+  }
 
   # glmnet fallback: requires at least 2 predictors
   if (method == "glmnet" && ncol(X_train) < 2L) {
@@ -136,17 +165,17 @@ run_model <- function(X_train, Y_train, params) {
       ncol(X_train), " column(s). Falling back to method = 'lm'.",
       call. = FALSE
     )
-    method <- "lm"
+    method      <- "lm"
+    user_method <- "lm"
   }
 
   # ---------------------------------------------------------------------------
   # 3. Prepare data: sanitise column names and coerce to data frame
   # ---------------------------------------------------------------------------
-  clean_names      <- make.names(colnames(X_train), unique = TRUE)
-  X_df             <- as.data.frame(X_train)
-  colnames(X_df)   <- clean_names
-
-  train_data       <- cbind(X_df, .Y = Y_train)
+  clean_names    <- make.names(colnames(X_train), unique = TRUE)
+  X_df           <- as.data.frame(X_train)
+  colnames(X_df) <- clean_names
+  train_data     <- cbind(X_df, .Y = Y_train)
 
   # ---------------------------------------------------------------------------
   # 4. Configure caret trainControl
@@ -156,61 +185,71 @@ run_model <- function(X_train, Y_train, params) {
     number          = inner_folds,
     savePredictions = FALSE,
     verboseIter     = FALSE,
-    allowParallel   = FALSE   # parallelism managed at the outer CV level
+    allowParallel   = FALSE
   )
 
   # ---------------------------------------------------------------------------
-  # 5. Set per-fold seed and fit via caret
+  # 5. Fit via caret
   # ---------------------------------------------------------------------------
-  set.seed(seed + fold_id)
-
   caret_fit <- switch(method,
 
-    lm = {
-      caret::train(
-        .Y ~ .,
-        data      = train_data,
-        method    = "lm",
-        trControl = tr_control
-      )
-    },
+                      lm = {
+                        caret::train(
+                          .Y ~ .,
+                          data      = train_data,
+                          method    = "lm",
+                          trControl = tr_control
+                        )
+                      },
 
-    glmnet = {
-      caret::train(
-        .Y ~ .,
-        data        = train_data,
-        method      = "glmnet",
-        trControl   = tr_control,
-        tuneGrid    = tune_grid,
-        tuneLength  = if (is.null(tune_grid)) tune_length else NULL,
-        metric      = "RMSE"
-      )
-    },
+                      glmnet = {
+                        caret::train(
+                          .Y ~ .,
+                          data       = train_data,
+                          method     = "glmnet",
+                          trControl  = tr_control,
+                          tuneGrid   = tune_grid,
+                          tuneLength = if (is.null(tune_grid)) tune_length else NULL,
+                          metric     = "RMSE"
+                        )
+                      },
 
-    ranger = {
-      caret::train(
-        .Y ~ .,
-        data        = train_data,
-        method      = "ranger",
-        trControl   = tr_control,
-        tuneGrid    = tune_grid,
-        tuneLength  = if (is.null(tune_grid)) tune_length else NULL,
-        metric      = "RMSE",
-        num.threads = 1L        # prevent oversubscription in parallelised outer loops
-      )
-    }
+                      ranger = {
+                        caret::train(
+                          .Y ~ .,
+                          data        = train_data,
+                          method      = "ranger",
+                          trControl   = tr_control,
+                          tuneGrid    = tune_grid,
+                          tuneLength  = if (is.null(tune_grid)) tune_length else NULL,
+                          metric      = "RMSE",
+                          num.threads = 1L
+                        )
+                      }
   )
 
   # ---------------------------------------------------------------------------
-  # 6. Assemble and return fit object
+  # 6. Extract embedded selected features (lasso / glmnet with alpha > 0)
+  # ---------------------------------------------------------------------------
+  selected_features <- .extract_glmnet_features(
+    caret_fit   = caret_fit,
+    method      = method,
+    user_method = user_method,
+    fixed_alpha = fixed_alpha,
+    col_names   = clean_names
+  )
+
+  # ---------------------------------------------------------------------------
+  # 7. Assemble and return fit object
   # ---------------------------------------------------------------------------
   structure(
     list(
-      caret_fit   = caret_fit,
-      method      = method,
-      best_params = if (method == "lm") NA else caret_fit$bestTune,
-      inner_folds = inner_folds,
-      col_names   = clean_names
+      caret_fit         = caret_fit,
+      method            = user_method,
+      best_params       = if (method == "lm") NA else caret_fit$bestTune,
+      inner_folds       = inner_folds,
+      col_names         = clean_names,
+      selected_features = selected_features
     ),
     class = "predictomics_model"
   )
@@ -255,7 +294,6 @@ predict_model <- function(fit, X_new) {
   X_df           <- as.data.frame(X_new)
   colnames(X_df) <- make.names(colnames(X_new), unique = TRUE)
 
-  # Guard: confirm sanitised names match those seen during training
   if (!identical(colnames(X_df), fit$col_names))
     stop("[predictomics] Column names of X_new do not match those used during ",
          "model training after sanitisation. Ensure X_new has the same ",
@@ -265,4 +303,63 @@ predict_model <- function(fit, X_new) {
   # 3. Predict and return
   # ---------------------------------------------------------------------------
   as.numeric(predict(fit$caret_fit, newdata = X_df))
+}
+
+
+# =============================================================================
+# Internal helpers
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+#' Extract non-zero coefficient features from a fitted glmnet model
+#'
+#' @description
+#' For \code{"lasso"} and \code{"glmnet"} fits where alpha > 0, extracts the
+#' names of features with non-zero coefficients at the selected lambda from the
+#' final model. Returns \code{NULL} for \code{"ridge"} (alpha = 0), \code{"lm"},
+#' and \code{"ranger"}, since these methods do not produce sparse solutions.
+#'
+#' @param caret_fit A fitted caret train object.
+#' @param method Character. The resolved method (\code{"glmnet"} or \code{"lm"}).
+#' @param user_method Character. The user-supplied method name.
+#' @param fixed_alpha Numeric or \code{NULL}. The fixed alpha value for lasso
+#'   or ridge, or \code{NULL} for glmnet (alpha tuned).
+#' @param col_names Character vector. Sanitised column names from training.
+#'
+#' @return Character vector of selected feature names (in original
+#'   pre-sanitisation names where possible), or \code{NULL}.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.extract_glmnet_features <- function(caret_fit, method, user_method,
+                                     fixed_alpha, col_names) {
+
+  # Only applicable for glmnet-family with sparsity (alpha > 0)
+  is_glmnet  <- method == "glmnet"
+  is_ridge   <- !is.null(fixed_alpha) && fixed_alpha == 0
+  is_sparse  <- is_glmnet && !is_ridge
+
+  if (!is_sparse) return(NULL)
+
+  # Determine best alpha from tuning (for glmnet, alpha may have been tuned)
+  best_alpha <- if (!is.null(fixed_alpha)) {
+    fixed_alpha
+  } else {
+    caret_fit$bestTune$alpha
+  }
+
+  # Ridge produces no zeros even if alpha = 0 was selected by tuning
+  if (!is.null(best_alpha) && best_alpha == 0) return(NULL)
+
+  # Extract coefficients at best lambda from the final model
+  best_lambda <- caret_fit$bestTune$lambda
+  coef_mat    <- coef(caret_fit$finalModel, s = best_lambda)
+
+  # coef_mat is a sparse matrix; convert to named vector and drop intercept
+  coef_vec    <- as.numeric(coef_mat)
+  coef_names  <- rownames(coef_mat)
+  coef_vec    <- setNames(coef_vec, coef_names)
+  coef_vec    <- coef_vec[names(coef_vec) != "(Intercept)"]
+
+  # Return sanitised names of non-zero features
+  col_names[coef_vec != 0]
 }

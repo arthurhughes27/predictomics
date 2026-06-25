@@ -16,7 +16,8 @@ Training predictor matrix. Must have column names.}
 for the \code{model_params} argument. Supported fields:
 \describe{
 \item{\code{method}}{Character string. One of \code{"lm"},
-\code{"glmnet"}, or \code{"ranger"}. Required.}
+\code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, or \code{"ranger"}.
+Required.}
 \item{\code{inner_folds}}{Positive integer. Number of inner CV folds
 for hyperparameter tuning. Defaults to \code{5}. Ignored for
 \code{"lm"}.}
@@ -25,30 +26,35 @@ evaluate, or \code{NULL} to use the caret default grid. Optional.}
 \item{\code{tune_length}}{Positive integer. Passed to caret's
 \code{tuneLength} to auto-generate a grid of this size. Ignored if
 \code{tune_grid} is provided. Optional.}
-\item{\code{seed}}{Integer. Base seed for reproducible inner CV.
-Defaults to \code{12345}.}
-\item{\code{fold_id}}{Integer. Outer fold index, used to derive a
-per-fold seed (\code{seed + fold_id}). Defaults to \code{0}.}
+\item{\code{fold_id}}{Integer. Outer fold index, stored in the result
+for reference. Defaults to \code{0}. Reproducibility is managed by
+\code{future.apply} at the outer CV level.}
 }}
 }
 \value{
 A named list of class \code{"predictomics_model"} containing:
 \describe{
 \item{\code{caret_fit}}{The \code{caret} train object.}
-\item{\code{method}}{Character string. The model method used.}
+\item{\code{method}}{Character string. The model method as supplied
+by the user (e.g. \code{"lasso"}, not the resolved \code{"glmnet"}).}
 \item{\code{best_params}}{Data frame. The best hyperparameters selected
 by inner CV (\code{NA} for \code{"lm"}).}
 \item{\code{inner_folds}}{Integer. Number of inner CV folds used.}
 \item{\code{col_names}}{Character vector. Sanitised column names used
 during fitting, required for consistent prediction.}
+\item{\code{selected_features}}{Character vector of features with
+non-zero coefficients at the best lambda, for \code{"lasso"} and
+\code{"glmnet"} when alpha > 0. \code{NULL} for all other methods
+and for \code{"ridge"}.}
 }
 }
 \description{
 Fits a predictive model on the training data \code{X_train} and
 \code{Y_train}. For models with hyperparameters (\code{"glmnet"},
-\code{"ranger"}), tuning is performed via k-fold cross-validation on the
-training data using \code{caret::train}, and the best hyperparameters are
-used to refit a final model. For \code{"lm"}, no tuning is performed.
+\code{"lasso"}, \code{"ridge"}, \code{"ranger"}), tuning is performed via
+k-fold cross-validation on the training data using \code{caret::train}, and
+the best hyperparameters are used to refit a final model. For \code{"lm"},
+no tuning is performed.
 }
 \details{
 All models are fitted through \code{caret::train} to provide a uniform
@@ -57,14 +63,19 @@ interface. Column names of \code{X_train} are sanitised with
 in caret's formula handling. The same sanitisation must be applied to
 \code{X_new} in \code{\link{predict_model}}, which is handled automatically.
 
-A deterministic per-fold seed is set immediately before each
-\code{caret::train} call to ensure reproducibility of the inner CV without
-interfering with the outer CV loop. The seed used is \code{seed + fold_id}.
+Reproducibility of the inner CV is ensured via the \code{future.seed}
+argument passed to \code{future.apply::future_lapply} in
+\code{\link{predict_cv}}, which manages per-worker RNG streams. No manual
+\code{set.seed()} call is made inside \code{run_model} to avoid
+interfering with these streams.
 
-\strong{glmnet}: tunes \code{alpha} (mixing parameter, 0 = ridge, 1 = LASSO)
-and \code{lambda} (regularisation strength) via inner CV. If \code{X_train}
-contains only a single feature, falls back to \code{"lm"} with a warning,
-as \code{glmnet} requires at least two predictors.
+\strong{glmnet/lasso/ridge}: tunes \code{lambda} (regularisation strength) via
+inner CV. For \code{"glmnet"}, \code{alpha} is also tuned. For
+\code{"lasso"} and \code{"ridge"}, \code{alpha} is fixed at 1 and 0
+respectively. If \code{X_train} contains only a single feature, falls back
+to \code{"lm"} with a warning. For \code{"lasso"} and \code{"glmnet"}
+(when alpha > 0), non-zero coefficient features are stored in
+\code{selected_features} of the returned fit object.
 
 \strong{ranger}: tunes \code{mtry} (number of variables sampled per split),
 \code{min.node.size} (minimum node size), and \code{splitrule}
@@ -80,6 +91,10 @@ Y_train <- rnorm(40)
 
 # OLS
 fit <- run_model(X_train, Y_train, params = list(method = "lm"))
+
+# Lasso with default lambda grid
+fit <- run_model(X_train, Y_train, params = list(method = "lasso"))
+fit$selected_features  # non-zero coefficient features
 
 # Elastic net with default tuning grid
 fit <- run_model(X_train, Y_train, params = list(method = "glmnet",

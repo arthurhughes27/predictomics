@@ -41,6 +41,19 @@
 #' through engineering or selection. Covariate column names must not clash with
 #' feature names in \code{X} or treatment column names.
 #'
+#' **Parallelisation**: the outer CV loop is parallelised via
+#' \code{future.apply::future_lapply}. To enable parallel execution, set a
+#' \code{future} plan before calling \code{predict_cv}:
+#' \preformatted{
+#'   future::plan(future::multisession, workers = 4)
+#'   result <- predict_cv(Y, X, ...)
+#'   future::plan(future::sequential)  # reset after use
+#' }
+#' If no plan is set, execution is sequential (the default behaviour).
+#' Reproducibility is ensured via \code{future.seed} regardless of whether
+#' parallel or sequential execution is used. Per-fold progress messages are
+#' suppressed when a parallel plan is active.
+#'
 #' @param Y Numeric vector of length n. The response variable to be predicted.
 #' @param X Numeric matrix of dimensions n (samples) x p (features).
 #'   The predictor matrix. Column names should be feature identifiers.
@@ -50,8 +63,8 @@
 #' @param folds Positive integer. Number of folds for k-fold CV. Must satisfy
 #'   \code{2 <= folds <= n}. Ignored when \code{cv_type = "loo"}.
 #'   Defaults to \code{10}.
-#' @param seed Integer. Random seed for reproducible fold assignment in k-fold
-#'   CV. Ignored when \code{cv_type = "loo"}. Defaults to \code{12345}.
+#' @param seed Integer. Random seed for reproducible fold assignment and
+#'   parallel RNG streams. Defaults to \code{12345}.
 #' @param engineering_params A named list specifying feature engineering steps
 #'   to apply. See \code{\link{run_engineering}} for supported options. Pass
 #'   \code{NULL} (default) to skip engineering.
@@ -106,6 +119,18 @@
 #'     \item{\code{n_samples}}{Integer. Number of samples.}
 #'     \item{\code{n_features_input}}{Integer. Number of features in the input
 #'       \code{X}.}
+#'     \item{\code{fold_selection_diagnostics}}{A list of length
+#'       \code{n_folds}, each element containing \code{selected_features},
+#'       \code{selection_scores}, and \code{n_selected} for that fold.
+#'       \code{NULL} if no explicit selection was performed.}
+#'     \item{\code{outside_cv_selection}}{A list containing
+#'       \code{selected_features}, \code{selection_scores}, and
+#'       \code{n_selected} from outside-CV selection. \code{NULL} if
+#'       \code{outside_cv = FALSE} or no selection was performed.}
+#'     \item{\code{fold_embedded_selection_diagnostics}}{A list of length
+#'       \code{n_folds}, each element containing \code{selected_features}
+#'       and \code{n_selected} from embedded selection (lasso/glmnet).
+#'       \code{NULL} if the model does not perform embedded selection.}
 #'     \item{\code{call}}{The matched call.}
 #'   }
 #'
@@ -130,6 +155,11 @@
 #'
 #' # Basic usage: 10-fold CV with default OLS model
 #' result <- predict_cv(Y = Y, X = X)
+#'
+#' # With parallelisation
+#' future::plan(future::multisession, workers = 4)
+#' result <- predict_cv(Y = Y, X = X)
+#' future::plan(future::sequential)
 #'
 #' # With binary treatment as predictor
 #' treatment <- sample(c(0L, 1L), n, replace = TRUE)
@@ -196,7 +226,24 @@ predict_cv <- function(Y,
   }
 
   # ---------------------------------------------------------------------------
-  # 3. Generate fold assignments
+  # 3. Double selection message
+  # ---------------------------------------------------------------------------
+  embedded_methods <- c("glmnet", "lasso")
+  is_embedded      <- model_params$method %in% embedded_methods
+
+  if (!is.null(selection_params) && is_embedded) {
+    message(
+      "[predictomics] Note: both an explicit selection method ('",
+      selection_params$method, "') and an embedded selection model ('",
+      model_params$method, "') are specified. Double variable selection will ",
+      "be performed: features are first filtered by '", selection_params$method,
+      "', then further selected by the regularisation in '",
+      model_params$method, "'."
+    )
+  }
+
+  # ---------------------------------------------------------------------------
+  # 4. Generate fold assignments
   # ---------------------------------------------------------------------------
   fold_ids <- make_folds(n = n, cv_type = cv_type, k = folds, seed = seed)
 
@@ -206,30 +253,27 @@ predict_cv <- function(Y,
   }
 
   # ---------------------------------------------------------------------------
-  # 4. Prepare protected predictor matrices (once, outside loop — no leakage)
+  # 5. Prepare protected predictor matrices (once, outside loop — no leakage)
   # ---------------------------------------------------------------------------
-
-  # Treatment matrix: NULL if not used as predictor
   treatment_mat <- if (!is.null(treatment) && treatment_predictor) {
     .prepare_treatment_matrix(treatment)
   } else {
     NULL
   }
 
-  # Covariate matrix: one-hot encoded once from full dataset
   covariate_mat <- if (!is.null(covariates)) {
     .prepare_covariate_matrix(covariates)
   } else {
     NULL
   }
 
-  # Check for column name collisions across protected predictors and X
   .validate_predictor_name_collisions(X, treatment_mat, covariate_mat)
 
   # ---------------------------------------------------------------------------
-  # 5. Outside-CV steps (applied once to full dataset, with leakage)
+  # 6. Outside-CV steps (applied once to full dataset, with leakage)
   # ---------------------------------------------------------------------------
-  X_processed <- X
+  outside_cv_selection <- NULL
+  X_processed          <- X
 
   if (outside_cv) {
 
@@ -241,108 +285,97 @@ predict_cv <- function(Y,
 
     if (!is.null(selection_params)) {
       if (verbose) message("[predictomics] Applying feature selection outside CV loop.")
-      sel_fit     <- run_selection(X_train    = X_processed,
-                                   Y_train    = Y,
-                                   covariates = covariate_mat,
-                                   treatment  = if (!is.null(treatment))
-                                     .coerce_treatment_binary(treatment)
-                                   else NULL,
-                                   params     = selection_params)
-      X_processed <- X_processed[, sel_fit$selected_features, drop = FALSE]
-    }
-  }
-
-  # ---------------------------------------------------------------------------
-  # 6. Cross-validation loop
-  # ---------------------------------------------------------------------------
-  predictions <- numeric(n)
-
-  # Initialise per-fold selection diagnostics (NULL if no selection performed)
-  fold_selection_diagnostics <- if (!is.null(selection_params)) vector("list", folds) else NULL
-
-  for (k in seq_len(folds)) {
-
-    if (verbose) message("[predictomics]   Fold ", k, " / ", folds, " ...")
-
-    train_idx <- which(fold_ids != k)
-    test_idx  <- which(fold_ids == k)
-
-    X_train <- X_processed[train_idx, , drop = FALSE]
-    Y_train <- Y[train_idx]
-    X_test  <- X_processed[test_idx,  , drop = FALSE]
-
-    # -- Inside-CV feature engineering ---------------------------------------
-    if (!outside_cv && !is.null(engineering_params)) {
-      eng_fit <- run_engineering(X_train = X_train, params = engineering_params)
-      X_train <- eng_fit$X_transformed
-      X_test  <- predict_engineering(eng_fit$fit, X_new = X_test)
-    }
-
-    # -- Inside-CV feature selection -----------------------------------------
-    if (!outside_cv && !is.null(selection_params)) {
-      sel_fit <- run_selection(
-        X_train    = X_train,
-        Y_train    = Y_train,
-        covariates = if (!is.null(covariate_mat))
-          covariate_mat[train_idx, , drop = FALSE]
+      sel_fit     <- run_selection(
+        X_train    = X_processed,
+        Y_train    = Y,
+        covariates = covariate_mat,
+        treatment  = if (!is.null(treatment))
+          .coerce_treatment_binary(treatment)
         else NULL,
-        treatment  = if (!is.null(treatment)) treatment[train_idx] else NULL,
         params     = selection_params
       )
-      X_train <- X_train[, sel_fit$selected_features, drop = FALSE]
-      X_test  <- X_test[,  sel_fit$selected_features, drop = FALSE]
-
-      # Store per-fold diagnostics
-      fold_selection_diagnostics[[k]] <- list(
+      X_processed          <- X_processed[, sel_fit$selected_features, drop = FALSE]
+      outside_cv_selection <- list(
         selected_features = sel_fit$selected_features,
         selection_scores  = sel_fit$selection_scores,
         n_selected        = length(sel_fit$selected_features)
       )
     }
+  }
 
-    # -- Append protected predictors (treatment then covariates) -------------
-    if (!is.null(treatment_mat)) {
-      X_train <- cbind(X_train, treatment_mat[train_idx, , drop = FALSE])
-      X_test  <- cbind(X_test,  treatment_mat[test_idx,  , drop = FALSE])
-    }
+  # ---------------------------------------------------------------------------
+  # 7. Cross-validation loop (parallelised via future_lapply)
+  # ---------------------------------------------------------------------------
+  if (verbose) message("[predictomics] Running CV folds ...")
 
-    if (!is.null(covariate_mat)) {
-      X_train <- cbind(X_train, covariate_mat[train_idx, , drop = FALSE])
-      X_test  <- cbind(X_test,  covariate_mat[test_idx,  , drop = FALSE])
-    }
-
-    # -- Model fitting and prediction ----------------------------------------
-    model_fit <- run_model(
-      X_train = X_train,
-      Y_train = Y_train,
-      params  = modifyList(model_params, list(fold_id = k))
+  fold_results <- suppressMessages(suppressWarnings(
+    future.apply::future_lapply(
+      X           = seq_len(folds),
+      FUN         = function(k) {
+        .run_fold(
+          k                  = k,
+          fold_ids           = fold_ids,
+          X_processed        = X_processed,
+          Y                  = Y,
+          outside_cv         = outside_cv,
+          engineering_params = engineering_params,
+          selection_params   = selection_params,
+          model_params       = model_params,
+          treatment          = treatment,
+          treatment_mat      = treatment_mat,
+          covariate_mat      = covariate_mat
+        )
+      },
+      future.seed = seed
     )
-    predictions[test_idx] <- predict_model(fit = model_fit, X_new = X_test)
+  ))
+
+  # ---------------------------------------------------------------------------
+  # 8. Assemble results from fold list
+  # ---------------------------------------------------------------------------
+  predictions                        <- numeric(n)
+  fold_selection_diagnostics         <- if (!is.null(selection_params))
+    vector("list", folds) else NULL
+  fold_embedded_selection_diagnostics <- if (is_embedded)
+    vector("list", folds) else NULL
+
+  for (k in seq_len(folds)) {
+    test_idx              <- which(fold_ids == k)
+    predictions[test_idx] <- fold_results[[k]]$predictions[test_idx]
+
+    if (!is.null(selection_params))
+      fold_selection_diagnostics[[k]] <- fold_results[[k]]$selection_diagnostics
+
+    if (is_embedded)
+      fold_embedded_selection_diagnostics[[k]] <-
+      fold_results[[k]]$embedded_selection_diagnostics
   }
 
   if (verbose) message("[predictomics] CV complete.")
 
   # ---------------------------------------------------------------------------
-  # 7. Assemble and return result object
+  # 9. Assemble and return result object
   # ---------------------------------------------------------------------------
   structure(
     list(
-      observed                    = Y,
-      predicted                   = predictions,
-      fold_ids                    = fold_ids,
-      treatment                   = treatment,
-      treatment_predictor         = treatment_predictor,
-      covariates                  = covariates,
-      engineering_params          = engineering_params,
-      selection_params            = selection_params,
-      model_params                = model_params,
-      outside_cv                  = outside_cv,
-      cv_type                     = cv_type,
-      n_folds                     = folds,
-      n_samples                   = n,
-      n_features_input            = p,
-      fold_selection_diagnostics  = fold_selection_diagnostics,
-      call                        = cl
+      observed                            = Y,
+      predicted                           = predictions,
+      fold_ids                            = fold_ids,
+      treatment                           = treatment,
+      treatment_predictor                 = treatment_predictor,
+      covariates                          = covariates,
+      engineering_params                  = engineering_params,
+      selection_params                    = selection_params,
+      model_params                        = model_params,
+      outside_cv                          = outside_cv,
+      cv_type                             = cv_type,
+      n_folds                             = folds,
+      n_samples                           = n,
+      n_features_input                    = p,
+      fold_selection_diagnostics          = fold_selection_diagnostics,
+      outside_cv_selection                = outside_cv_selection,
+      fold_embedded_selection_diagnostics = fold_embedded_selection_diagnostics,
+      call                                = cl
     ),
     class = "predictomics"
   )

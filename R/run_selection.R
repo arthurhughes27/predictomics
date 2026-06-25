@@ -257,7 +257,25 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   # ---------------------------------------------------------------------------
   selected_features <- if (!is.null(top_n)) {
 
+    if (method == "relative_gain" & any(scores[seq_len(top_n)] < 0)){
+
+      n_below_floor = sum(scores[seq_len(top_n)] < 0)
+
+      message(
+        "[predictomics] Relative gain selection: ", n_below_floor,
+        " feature(s) in the top ", top_n,
+        " have relative gain < 0.",
+        " By definition, these features negatively affect the predictive performance",
+        " and have therefore been removed from selection."
+      )
+
+    names(scores)[seq_len(top_n)][which(scores[seq_len(top_n)] > 0)]
+
+    } else {
+
     names(scores)[seq_len(top_n)]
+
+    }
 
   } else {
 
