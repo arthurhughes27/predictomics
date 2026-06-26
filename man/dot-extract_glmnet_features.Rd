@@ -9,7 +9,8 @@
   method,
   user_method,
   fixed_alpha,
-  col_names
+  col_names,
+  original_names
 )
 }
 \arguments{
@@ -23,6 +24,8 @@
 or ridge, or \code{NULL} for glmnet (alpha tuned).}
 
 \item{col_names}{Character vector. Sanitised column names from training.}
+
+\item{original_names}{Character vector. Original variable names to be passed to output.}
 }
 \value{
 Character vector of selected feature names (in original

@@ -43,9 +43,13 @@ by inner CV (\code{NA} for \code{"lm"}).}
 \item{\code{col_names}}{Character vector. Sanitised column names used
 during fitting, required for consistent prediction.}
 \item{\code{selected_features}}{Character vector of features with
-non-zero coefficients at the best lambda, for \code{"lasso"} and
-\code{"glmnet"} when alpha > 0. \code{NULL} for all other methods
-and for \code{"ridge"}.}
+non-zero coefficients at the best lambda, sorted by decreasing
+absolute coefficient value. For \code{"lasso"} and \code{"glmnet"}
+when alpha > 0. \code{NULL} for all other methods and \code{"ridge"}.}
+\item{\code{selection_scores}}{Named numeric vector of raw (signed)
+coefficient values for selected features, sorted by decreasing
+absolute value. \code{NULL} when \code{selected_features} is
+\code{NULL}.}
 }
 }
 \description{

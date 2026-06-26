@@ -86,9 +86,13 @@
 #'     \item{\code{col_names}}{Character vector. Sanitised column names used
 #'       during fitting, required for consistent prediction.}
 #'     \item{\code{selected_features}}{Character vector of features with
-#'       non-zero coefficients at the best lambda, for \code{"lasso"} and
-#'       \code{"glmnet"} when alpha > 0. \code{NULL} for all other methods
-#'       and for \code{"ridge"}.}
+#'       non-zero coefficients at the best lambda, sorted by decreasing
+#'       absolute coefficient value. For \code{"lasso"} and \code{"glmnet"}
+#'       when alpha > 0. \code{NULL} for all other methods and \code{"ridge"}.}
+#'     \item{\code{selection_scores}}{Named numeric vector of raw (signed)
+#'       coefficient values for selected features, sorted by decreasing
+#'       absolute value. \code{NULL} when \code{selected_features} is
+#'       \code{NULL}.}
 #'   }
 #'
 #' @seealso \code{\link{predict_model}}, \code{\link{predict_cv}}
@@ -232,11 +236,12 @@ run_model <- function(X_train, Y_train, params) {
   # 6. Extract embedded selected features (lasso / glmnet with alpha > 0)
   # ---------------------------------------------------------------------------
   selected_features <- .extract_glmnet_features(
-    caret_fit   = caret_fit,
-    method      = method,
-    user_method = user_method,
-    fixed_alpha = fixed_alpha,
-    col_names   = clean_names
+    caret_fit      = caret_fit,
+    method         = method,
+    user_method    = user_method,
+    fixed_alpha    = fixed_alpha,
+    col_names      = clean_names,
+    original_names = colnames(X_train)
   )
 
   # ---------------------------------------------------------------------------
@@ -249,7 +254,8 @@ run_model <- function(X_train, Y_train, params) {
       best_params       = if (method == "lm") NA else caret_fit$bestTune,
       inner_folds       = inner_folds,
       col_names         = clean_names,
-      selected_features = selected_features
+      selected_features = selected_features$features,
+      selection_scores  = selected_features$scores
     ),
     class = "predictomics_model"
   )
@@ -325,20 +331,22 @@ predict_model <- function(fit, X_new) {
 #' @param fixed_alpha Numeric or \code{NULL}. The fixed alpha value for lasso
 #'   or ridge, or \code{NULL} for glmnet (alpha tuned).
 #' @param col_names Character vector. Sanitised column names from training.
+#' @param original_names Character vector. Original variable names to be passed to output.
 #'
 #' @return Character vector of selected feature names (in original
 #'   pre-sanitisation names where possible), or \code{NULL}.
 #' @keywords internal
 # -----------------------------------------------------------------------------
 .extract_glmnet_features <- function(caret_fit, method, user_method,
-                                     fixed_alpha, col_names) {
+                                     fixed_alpha, col_names,
+                                     original_names) {
 
   # Only applicable for glmnet-family with sparsity (alpha > 0)
   is_glmnet  <- method == "glmnet"
   is_ridge   <- !is.null(fixed_alpha) && fixed_alpha == 0
   is_sparse  <- is_glmnet && !is_ridge
 
-  if (!is_sparse) return(NULL)
+  if (!is_sparse) return(list(features = NULL, scores = NULL))
 
   # Determine best alpha from tuning (for glmnet, alpha may have been tuned)
   best_alpha <- if (!is.null(fixed_alpha)) {
@@ -348,7 +356,7 @@ predict_model <- function(fit, X_new) {
   }
 
   # Ridge produces no zeros even if alpha = 0 was selected by tuning
-  if (!is.null(best_alpha) && best_alpha == 0) return(NULL)
+  if (!is.null(best_alpha) && best_alpha == 0) return(list(features = NULL, scores = NULL))
 
   # Extract coefficients at best lambda from the final model
   best_lambda <- caret_fit$bestTune$lambda
@@ -360,6 +368,18 @@ predict_model <- function(fit, X_new) {
   coef_vec    <- setNames(coef_vec, coef_names)
   coef_vec    <- coef_vec[names(coef_vec) != "(Intercept)"]
 
-  # Return sanitised names of non-zero features
-  col_names[coef_vec != 0]
+  # Identify non-zero features using sanitised names (matched to coef_vec)
+  # but return original names for interpretability
+  nonzero_mask   <- coef_vec != 0
+  nonzero_coefs  <- coef_vec[nonzero_mask]
+  nonzero_clean  <- col_names[nonzero_mask]
+  nonzero_orig   <- original_names[nonzero_mask]
+
+  # Sort by decreasing absolute coefficient value
+  ord                 <- order(abs(nonzero_coefs), decreasing = TRUE)
+  sorted_orig         <- nonzero_orig[ord]
+  sorted_coefs        <- nonzero_coefs[ord]
+  names(sorted_coefs) <- sorted_orig
+
+  list(features = sorted_orig, scores = sorted_coefs)
 }

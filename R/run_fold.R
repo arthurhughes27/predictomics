@@ -104,6 +104,7 @@
   embedded_selection_diagnostics <- if (!is.null(model_fit$selected_features)) {
     list(
       selected_features = model_fit$selected_features,
+      selection_scores  = model_fit$selection_scores,
       n_selected        = length(model_fit$selected_features)
     )
   } else {
