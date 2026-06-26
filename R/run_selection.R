@@ -196,7 +196,7 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
            call. = FALSE)
   }
 
-  # top_n takes precedence — inform the user
+  # top_n takes precedence - inform the user
   if (!is.null(top_n) && !is.null(threshold)) {
     message("[predictomics] Both top_n and threshold supplied to run_selection; ",
             "top_n takes precedence.")
@@ -502,6 +502,16 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
 .compute_rise_scores <- function(X_train, Y_train, treatment, top_n,
                                  alpha, power_want_s, epsilon, u_y_hyp,
                                  p_correction, n_cores, alternative, paired) {
+
+  # Emit pairing order note when paired = TRUE
+  if (isTRUE(paired)) {
+    message(
+      "[predictomics] RISE paired mode: assuming samples are in matched ",
+      "pre/post order - row i of the pre-treatment group (treatment == 0) ",
+      "corresponds to row i of the post-treatment group (treatment == 1). ",
+      "Ensure this ordering is correct before proceeding."
+    )
+  }
 
   # ---------------------------------------------------------------------------
   # 1. Reshape inputs into RISE format

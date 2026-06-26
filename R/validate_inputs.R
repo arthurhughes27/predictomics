@@ -395,6 +395,35 @@
   invisible(NULL)
 }
 
+# -----------------------------------------------------------------------------
+#' Validate treatment for paired RISE mode
+#'
+#' @description
+#' Checks that treatment is binary numeric (not factor) and that the number
+#' of treated (1) and untreated (0) samples are equal, as required by
+#' paired RISE. Called from predict_cv when rise_paired = TRUE is detected.
+#'
+#' @param treatment Binary numeric vector (0/1).
+#' @return Invisibly returns NULL if validation passes.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.validate_paired_rise_treatment <- function(treatment) {
+
+  if (!is.numeric(treatment) || !all(treatment %in% c(0, 1)))
+    stop("[predictomics] Paired RISE requires treatment to be a binary ",
+         "numeric vector (0/1), not a factor.", call. = FALSE)
+
+  n1 <- sum(treatment == 1)
+  n0 <- sum(treatment == 0)
+
+  if (n1 != n0)
+    stop("[predictomics] Paired RISE requires equal numbers of pre-treatment ",
+         "(0) and post-treatment (1) samples. Found ", n0, " pre-treatment ",
+         "and ", n1, " post-treatment samples.", call. = FALSE)
+
+  invisible(NULL)
+}
+
 
 
 # -----------------------------------------------------------------------------

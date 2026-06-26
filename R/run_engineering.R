@@ -25,7 +25,7 @@
 #' \code{\link{predict_engineering}}.
 #'
 #' @details
-#' **Step 1 — Column-wise transformation** is applied independently to each
+#' **Step 1 - Column-wise transformation** is applied independently to each
 #' feature (column):
 #' \itemize{
 #'   \item \code{"none"}: no transformation is applied.
@@ -35,7 +35,7 @@
 #'     The training means and SDs are stored for application to the test set.
 #' }
 #'
-#' **Step 2 — Geneset aggregation** collapses groups of features into single
+#' **Step 2 - Geneset aggregation** collapses groups of features into single
 #' summary features. If \code{genesets} is provided, features not present in
 #' any geneset are discarded. Aggregation is performed on the (possibly
 #' transformed) output of Step 1. Supported aggregation methods:
@@ -130,7 +130,7 @@ run_engineering <- function(X_train, params) {
   agg_method    <- params$agg_method
 
   # ---------------------------------------------------------------------------
-  # 2. Step 1 — Column-wise transformation
+  # 2. Step 1 - Column-wise transformation
   # ---------------------------------------------------------------------------
   col_means <- NULL
   col_sds   <- NULL
@@ -159,7 +159,7 @@ run_engineering <- function(X_train, params) {
   )
 
   # ---------------------------------------------------------------------------
-  # 3. Step 2 — Geneset aggregation
+  # 3. Step 2 - Geneset aggregation
   # ---------------------------------------------------------------------------
   pc1_loadings <- NULL
 
@@ -230,7 +230,7 @@ predict_engineering <- function(fit, X_new) {
     stop("[predictomics] X_new must have column names.", call. = FALSE)
 
   # ---------------------------------------------------------------------------
-  # 2. Step 1 — Apply column-wise transformation using training parameters
+  # 2. Step 1 - Apply column-wise transformation using training parameters
   # ---------------------------------------------------------------------------
   X_out <- switch(fit$col_transform,
 
@@ -240,7 +240,7 @@ predict_engineering <- function(fit, X_new) {
   )
 
   # ---------------------------------------------------------------------------
-  # 3. Step 2 — Apply geneset aggregation using training parameters
+  # 3. Step 2 - Apply geneset aggregation using training parameters
   # ---------------------------------------------------------------------------
   if (!is.null(fit$genesets)) {
     X_out <- .aggregate_genesets(

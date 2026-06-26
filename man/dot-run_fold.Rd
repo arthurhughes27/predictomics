@@ -15,7 +15,12 @@
   model_params,
   treatment,
   treatment_mat,
-  covariate_mat
+  covariate_mat,
+  is_paired_rise = FALSE,
+  X_full = NULL,
+  Y_full = NULL,
+  treatment_full = NULL,
+  covariate_mat_full = NULL
 )
 }
 \arguments{

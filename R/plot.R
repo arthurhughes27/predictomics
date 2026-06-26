@@ -115,7 +115,11 @@ plot.predictomics <- function(x,
 
   if (has_treatment) {
     # Convert binary numeric to a labelled factor for the legend
-    trt <- x$treatment
+    trt <- if (isTRUE(x$paired_rise)) {
+      x$treatment[x$treatment == 1]
+    } else {
+      x$treatment
+    }
     if (is.numeric(trt)) {
       trt <- factor(trt, levels = c(0, 1),
                     labels = c("Control (0)", "Active (1)"))
@@ -136,7 +140,7 @@ plot.predictomics <- function(x,
                          linetype = "dashed", colour = "grey40",
                          linewidth = 0.6) +
 
-    # Points — coloured by treatment if available, fixed colour otherwise
+    # Points - coloured by treatment if available, fixed colour otherwise
     {
       if (has_treatment) {
         ggplot2::geom_point(

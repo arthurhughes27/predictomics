@@ -42,7 +42,12 @@
 # -----------------------------------------------------------------------------
 .run_fold <- function(k, fold_ids, X_processed, Y, outside_cv,
                       engineering_params, selection_params, model_params,
-                      treatment, treatment_mat, covariate_mat) {
+                      treatment, treatment_mat, covariate_mat,
+                      is_paired_rise     = FALSE,
+                      X_full             = NULL,
+                      Y_full             = NULL,
+                      treatment_full     = NULL,
+                      covariate_mat_full = NULL) {
 
   n         <- length(Y)
   train_idx <- which(fold_ids != k)
@@ -63,15 +68,41 @@
   selection_diagnostics <- NULL
 
   if (!outside_cv && !is.null(selection_params)) {
-    sel_fit <- run_selection(
-      X_train    = X_train,
-      Y_train    = Y_train,
-      covariates = if (!is.null(covariate_mat))
-        covariate_mat[train_idx, , drop = FALSE]
-      else NULL,
-      treatment  = if (!is.null(treatment)) treatment[train_idx] else NULL,
-      params     = selection_params
-    )
+    if (is_paired_rise) {
+      # For paired RISE, selection uses the full paired dataset (both arms).
+      # The fold indices in the modelling space (post-treatment only) map to
+      # post-treatment rows in the full dataset via the stored post_idx.
+      # We pass the full training partition of the paired data to run_selection.
+      n_full      <- nrow(X_full)
+      n_post      <- nrow(X_processed)
+      post_idx    <- which(treatment_full == 1)
+      pre_idx     <- which(treatment_full == 0)
+
+      # Training post-treatment indices in full data space
+      post_train  <- post_idx[train_idx]
+      pre_train   <- pre_idx[train_idx]   # matched pre rows for same individuals
+      paired_train_idx <- c(pre_train, post_train)
+
+      sel_fit <- run_selection(
+        X_train    = X_full[paired_train_idx, , drop = FALSE],
+        Y_train    = Y_full[paired_train_idx],
+        covariates = if (!is.null(covariate_mat_full))
+          covariate_mat_full[paired_train_idx, , drop = FALSE]
+        else NULL,
+        treatment  = treatment_full[paired_train_idx],
+        params     = selection_params
+      )
+    } else {
+      sel_fit <- run_selection(
+        X_train    = X_train,
+        Y_train    = Y_train,
+        covariates = if (!is.null(covariate_mat))
+          covariate_mat[train_idx, , drop = FALSE]
+        else NULL,
+        treatment  = if (!is.null(treatment)) treatment[train_idx] else NULL,
+        params     = selection_params
+      )
+    }
     X_train <- X_train[, sel_fit$selected_features, drop = FALSE]
     X_test  <- X_test[,  sel_fit$selected_features, drop = FALSE]
 

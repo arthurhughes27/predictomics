@@ -211,6 +211,27 @@ predict_cv <- function(Y,
   .validate_params_list(params = model_params,       arg_name = "model_params")
 
   # ---------------------------------------------------------------------------
+  # 1b. Detect paired RISE mode
+  # ---------------------------------------------------------------------------
+  is_paired_rise <- !is.null(selection_params) &&
+    isTRUE(selection_params$method == "rise") &&
+    isTRUE(selection_params$rise_paired)
+
+  if (is_paired_rise) {
+    .validate_paired_rise_treatment(treatment)
+    message(
+      "[predictomics] Paired RISE mode detected: treatment = 1 indicates ",
+      "post-treatment and treatment = 0 indicates pre-treatment.\n",
+      "  IMPORTANT: samples must be in matched order - row i of the ",
+      "post-treatment group must correspond to row i of the pre-treatment ",
+      "group in the input data.\n",
+      "  Predictive modelling will be performed on post-treatment samples ",
+      "only (treatment == 1). Pre-treatment samples are used for RISE ",
+      "screening only and will be excluded from the CV loop."
+    )
+  }
+
+  # ---------------------------------------------------------------------------
   # 2. Outside-CV warning
   # ---------------------------------------------------------------------------
   if (outside_cv) {
@@ -243,17 +264,7 @@ predict_cv <- function(Y,
   }
 
   # ---------------------------------------------------------------------------
-  # 4. Generate fold assignments
-  # ---------------------------------------------------------------------------
-  fold_ids <- make_folds(n = n, cv_type = cv_type, k = folds, seed = seed)
-
-  if (verbose) {
-    message("[predictomics] Starting ", folds, "-fold CV on ", n,
-            " samples and ", p, " features.")
-  }
-
-  # ---------------------------------------------------------------------------
-  # 5. Prepare protected predictor matrices (once, outside loop — no leakage)
+  # 5. Prepare protected predictor matrices (once, outside loop - no leakage)
   # ---------------------------------------------------------------------------
   treatment_mat <- if (!is.null(treatment) && treatment_predictor) {
     .prepare_treatment_matrix(treatment)
@@ -270,31 +281,75 @@ predict_cv <- function(Y,
   .validate_predictor_name_collisions(X, treatment_mat, covariate_mat)
 
   # ---------------------------------------------------------------------------
+  # 5b. Generate fold assignments
+  # ---------------------------------------------------------------------------
+  # Full data (both arms) is retained for passing to run_selection (RISE
+  # screening uses both arms). Modelling uses post-treatment only.
+  X_processed        <- X   # initialise here for paired RISE subsetting
+  X_full             <- X_processed
+  Y_full             <- Y
+  treatment_full     <- treatment
+  covariate_mat_full <- covariate_mat
+
+  if (is_paired_rise) {
+    post_idx      <- which(treatment == 1)
+    X_processed   <- X_processed[post_idx, , drop = FALSE]
+    Y             <- Y[post_idx]
+    covariate_mat <- if (!is.null(covariate_mat))
+      covariate_mat[post_idx, , drop = FALSE]
+    else NULL
+    treatment_mat <- if (!is.null(treatment_mat))
+      treatment_mat[post_idx, , drop = FALSE]
+    else NULL
+    n             <- length(Y)
+    folds         <- if (cv_type == "loo") n else folds
+  }
+
+  fold_ids <- make_folds(n = n, cv_type = cv_type, k = folds, seed = seed)
+
+  if (verbose) {
+    message("[predictomics] Starting ", folds, "-fold CV on ", n,
+            " samples and ", p, " features.")
+  }
+
+  # ---------------------------------------------------------------------------
   # 6. Outside-CV steps (applied once to full dataset, with leakage)
   # ---------------------------------------------------------------------------
   outside_cv_selection <- NULL
-  X_processed          <- X
 
   if (outside_cv) {
 
     if (!is.null(engineering_params)) {
       if (verbose) message("[predictomics] Applying feature engineering outside CV loop.")
-      eng_fit     <- run_engineering(X_train = X, params = engineering_params)
-      X_processed <- eng_fit$X_transformed
+      eng_fit  <- run_engineering(
+        X_train = if (is_paired_rise) X_full else X,
+        params  = engineering_params
+      )
+      if (is_paired_rise) {
+        # Store full engineered matrix for RISE selection, then subset for modelling
+        X_full      <- eng_fit$X_transformed
+        X_processed <- X_full[post_idx, , drop = FALSE]
+      } else {
+        X_processed <- eng_fit$X_transformed
+      }
     }
 
     if (!is.null(selection_params)) {
       if (verbose) message("[predictomics] Applying feature selection outside CV loop.")
-      sel_fit     <- run_selection(
-        X_train    = X_processed,
-        Y_train    = Y,
-        covariates = covariate_mat,
+      sel_fit <- run_selection(
+        X_train    = if (is_paired_rise) X_full else X_processed,
+        Y_train    = if (is_paired_rise) Y_full else Y,
+        covariates = if (is_paired_rise) covariate_mat_full
+        else covariate_mat,
         treatment  = if (!is.null(treatment))
-          .coerce_treatment_binary(treatment)
+          .coerce_treatment_binary(
+            if (is_paired_rise) treatment_full else treatment
+          )
         else NULL,
         params     = selection_params
       )
-      X_processed          <- X_processed[, sel_fit$selected_features, drop = FALSE]
+      # Subset selected features to post-treatment X_processed for modelling
+      X_processed <- X_processed[, sel_fit$selected_features, drop = FALSE]
       outside_cv_selection <- list(
         selected_features = sel_fit$selected_features,
         selection_scores  = sel_fit$selection_scores,
@@ -323,7 +378,12 @@ predict_cv <- function(Y,
           model_params       = model_params,
           treatment          = treatment,
           treatment_mat      = treatment_mat,
-          covariate_mat      = covariate_mat
+          covariate_mat      = covariate_mat,
+          is_paired_rise     = is_paired_rise,
+          X_full             = X_full,
+          Y_full             = Y_full,
+          treatment_full     = treatment_full,
+          covariate_mat_full = covariate_mat_full
         )
       },
       future.seed = seed
@@ -358,7 +418,7 @@ predict_cv <- function(Y,
   # ---------------------------------------------------------------------------
   structure(
     list(
-      observed                            = Y,
+      observed                            = if (is_paired_rise) Y else Y,
       predicted                           = predictions,
       fold_ids                            = fold_ids,
       treatment                           = treatment,
@@ -370,7 +430,10 @@ predict_cv <- function(Y,
       outside_cv                          = outside_cv,
       cv_type                             = cv_type,
       n_folds                             = folds,
-      n_samples                           = n,
+      n_samples                           = if (is_paired_rise){length(Y_full)} else {n},
+      n_samples_modelled                  = n,
+      n_samples_total                     = length(Y_full),
+      paired_rise                         = is_paired_rise,
       n_features_input                    = p,
       fold_selection_diagnostics          = fold_selection_diagnostics,
       outside_cv_selection                = outside_cv_selection,

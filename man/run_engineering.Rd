@@ -53,7 +53,7 @@ are stored in the returned fit object and consumed by
 \code{\link{predict_engineering}}.
 }
 \details{
-\strong{Step 1 — Column-wise transformation} is applied independently to each
+\strong{Step 1 - Column-wise transformation} is applied independently to each
 feature (column):
 \itemize{
 \item \code{"none"}: no transformation is applied.
@@ -63,7 +63,7 @@ the training set are left unchanged and a warning is issued.
 The training means and SDs are stored for application to the test set.
 }
 
-\strong{Step 2 — Geneset aggregation} collapses groups of features into single
+\strong{Step 2 - Geneset aggregation} collapses groups of features into single
 summary features. If \code{genesets} is provided, features not present in
 any geneset are discarded. Aggregation is performed on the (possibly
 transformed) output of Step 1. Supported aggregation methods:
