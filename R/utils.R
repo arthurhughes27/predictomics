@@ -121,12 +121,36 @@
 # -----------------------------------------------------------------------------
 .prepare_covariate_matrix <- function(covariates) {
 
-  # model.matrix handles both numeric and factor columns correctly.
-  # The intercept column (first column) is dropped via [, -1L].
-  # ~ . expands all columns in the data frame.
-  mat <- model.matrix(~ ., data = as.data.frame(covariates))[, -1L, drop = FALSE]
+  cov_df <- as.data.frame(covariates)
 
-  # Restore original row names if present
+  # Detect and remove null covariates (single-level variables)
+  n_levels <- vapply(cov_df, function(col) {
+    if (is.numeric(col)) length(unique(col[!is.na(col)]))
+    else                  nlevels(factor(col[!is.na(col)]))
+  }, integer(1))
+
+  null_covs <- names(n_levels)[n_levels < 2L]
+
+  if (length(null_covs) > 0L) {
+    warning(
+      "[predictomics] The following covariate(s) have only one unique value ",
+      "and will be removed from modelling: ",
+      paste(null_covs, collapse = ", "), ".",
+      call. = FALSE
+    )
+    cov_df <- cov_df[, n_levels >= 2L, drop = FALSE]
+  }
+
+  if (ncol(cov_df) == 0L) {
+    message(
+      "[predictomics] All covariates were removed due to having only one ",
+      "unique value. Proceeding without covariates."
+    )
+    return(NULL)
+  }
+
+  mat <- model.matrix(~ ., data = cov_df)[, -1L, drop = FALSE]
+
   if (!is.null(rownames(covariates))) rownames(mat) <- rownames(covariates)
 
   mat

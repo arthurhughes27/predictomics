@@ -249,17 +249,20 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                    }
   )
 
-  # Sort descending for reporting and selection
-  scores <- sort(scores, decreasing = TRUE)
+  if (method == "rise") {
+    scores <- sort(scores, decreasing = FALSE)
+  } else {
+    scores <- sort(scores, decreasing = TRUE)
+  }
 
   # ---------------------------------------------------------------------------
   # 3. Select features
   # ---------------------------------------------------------------------------
   selected_features <- if (!is.null(top_n)) {
 
-    if (method == "relative_gain" & any(scores[seq_len(top_n)] < 0)){
+    if (method == "relative_gain" && any(scores[seq_len(top_n)] < 0)) {
 
-      n_below_floor = sum(scores[seq_len(top_n)] < 0)
+      n_below_floor <- sum(scores[seq_len(top_n)] < 0)
 
       message(
         "[predictomics] Relative gain selection: ", n_below_floor,
@@ -269,30 +272,48 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
         " and have therefore been removed from selection."
       )
 
-    names(scores)[seq_len(top_n)][which(scores[seq_len(top_n)] > 0)]
+      names(scores)[seq_len(top_n)][which(scores[seq_len(top_n)] > 0)]
 
     } else {
 
-    names(scores)[seq_len(top_n)]
+      names(scores)[seq_len(top_n)]
 
     }
 
   } else {
 
-    sel <- names(scores)[scores >= threshold]
+    if (method == "rise") {
 
-    if (length(sel) == 0L)
-      stop("[predictomics] No features pass the threshold (", threshold,
-           ") for method = '", method, "'. ",
-           "Consider lowering threshold or using top_n instead.",
-           call. = FALSE)
+      # For RISE, threshold is a maximum p-value (lower = better)
+      sel <- names(scores)[scores <= threshold]
 
-    sel
+      if (length(sel) == 0L)
+        stop("[predictomics] No features pass the RISE p-value threshold (",
+             threshold, "). Consider raising the threshold or using top_n ",
+             "instead.", call. = FALSE)
+
+      sel
+
+    } else {
+
+      sel <- names(scores)[scores >= threshold]
+
+      if (length(sel) == 0L)
+        stop("[predictomics] No features pass the threshold (", threshold,
+             ") for method = '", method, "'. ",
+             "Consider lowering threshold or using top_n instead.",
+             call. = FALSE)
+
+      sel
+
+    }
   }
 
   # ---------------------------------------------------------------------------
   # 4. Return
   # ---------------------------------------------------------------------------
+
+
   list(
     selected_features = selected_features,
     selection_method  = method,
@@ -575,14 +596,16 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   #    features at the ceiling are ranked by -p_unadj, offset to be strictly
   #    below all non-ceiling scores.
   # ---------------------------------------------------------------------------
-  ceiling_offset  <- if (any(p_adj < 1)) min(-p_adj[p_adj < 1]) - 1 else -1
+  # Internal scores for sorting (negated so higher = better)
+  # Build interpretable score vector: adjusted p-value where < 1,
+  # unadjusted p-value as tiebreaker for ceiling features
+  scores_stored     <- p_adj
+  at_ceiling        <- p_adj == 1
+  if (any(at_ceiling))
+    scores_stored[at_ceiling] <- p_unadj[at_ceiling]
 
-  scores <- ifelse(
-    p_adj < 1,
-    -p_adj,
-    ceiling_offset - p_unadj   # pushes ceiling features below all non-ceiling
-  )
-
-  names(scores) <- colnames(X_train)
-  scores
+  # scores_stored is on the raw p-value scale: smaller = more significant.
+  # Returned unsorted; run_selection sorts ascending so best features come first.
+  names(scores_stored) <- colnames(X_train)
+  scores_stored
 }
