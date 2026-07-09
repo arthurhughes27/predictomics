@@ -11,7 +11,8 @@ RoxygenNote: 8.0.0
 Suggests: 
     testthat (>= 3.0.0),
     SurrogateRank,
-    future
+    future,
+    kernlab
 Config/testthat/edition: 3
 Imports:
     caret, ggplot2, future.apply, scales, tidyr

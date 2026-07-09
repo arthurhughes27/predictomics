@@ -9,6 +9,7 @@
 #   - "ridge"  : ridge regression via glmnet package (lambda tuned by inner CV)
 #   - "lasso"  : lasso regression via glmnet package (lambda tuned by inner CV)
 #   - "ranger" : random forest via ranger (mtry, min.node.size tuned by inner CV)
+#   - "svr"    : support vector regression with linear kernel via kernlab
 #
 # run_model()     fits a model on training data, performing inner-CV tuning
 #                 where applicable.
@@ -162,6 +163,13 @@ run_model <- function(X_train, Y_train, params) {
     method <- "glmnet"
   }
 
+  # Resolve svr to caret's svmLinear method
+  if (method == "svr") {
+    if (is.null(tune_grid))
+      tune_grid <- expand.grid(C = 10^seq(-2, 2, length = 20))
+    method <- "svmLinear"
+  }
+
   # glmnet fallback: requires at least 2 predictors
   if (method == "glmnet" && ncol(X_train) < 2L) {
     warning(
@@ -228,6 +236,18 @@ run_model <- function(X_train, Y_train, params) {
                           tuneLength  = if (is.null(tune_grid)) tune_length else NULL,
                           metric      = "RMSE",
                           num.threads = 1L
+                        )
+                      },
+
+                      svmLinear = {
+                        caret::train(
+                          .Y ~ .,
+                          data       = train_data,
+                          method     = "svmLinear",
+                          trControl  = tr_control,
+                          tuneGrid   = tune_grid,
+                          tuneLength = if (is.null(tune_grid)) tune_length else NULL,
+                          metric     = "RMSE"
                         )
                       }
   )

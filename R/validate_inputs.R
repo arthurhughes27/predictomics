@@ -264,7 +264,7 @@
 .validate_model_params <- function(params, n_train) {
 
   # method
-  supported <- c("lm", "glmnet", "ridge", "lasso", "ranger")
+  supported <- c("lm", "glmnet", "ridge", "lasso", "ranger", "svr")
   if (!params$method %in% supported)
     stop("[predictomics] model_params$method must be one of: ",
          paste(supported, collapse = ", "), ".", call. = FALSE)
