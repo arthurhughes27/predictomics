@@ -10,12 +10,12 @@
   list(X = X, Y = Y)
 }
 
-test_that("compare_pipelines runs a basic filtration comparison", {
+test_that("compare_pipelines runs a basic selection comparison", {
   d <- .make_compare_data()
 
   cmp <- compare_pipelines(
     Y = d$Y, X = d$X,
-    option_type    = "filtration",
+    option_type    = "selection",
     option_choices = list(
       list(method = "spearman", top_n = 5),
       list(method = "variance", top_n = 5)
@@ -41,7 +41,7 @@ test_that("the baseline pipeline uses the reference model_params and no X", {
 
   cmp <- compare_pipelines(
     Y = d$Y, X = d$X,
-    option_type    = "filtration",
+    option_type    = "selection",
     option_choices = list(list(method = "spearman", top_n = 5)),
     reference_params = list(
       selection_params = list(method = "pearson", top_n = 5),
@@ -63,7 +63,7 @@ test_that("a failing option is excluded with a message, others still succeed", {
   msgs <- testthat::capture_messages(
     cmp <- compare_pipelines(
       Y = d$Y, X = d$X,
-      option_type    = "filtration",
+      option_type    = "selection",
       option_choices = list(
         good = list(method = "spearman", top_n = 5),
         bad  = list(method = "not_a_real_method", top_n = 5)
@@ -89,7 +89,7 @@ test_that("same-method options are auto-labelled with a numeric suffix", {
 
   cmp <- compare_pipelines(
     Y = d$Y, X = d$X,
-    option_type    = "filtration",
+    option_type    = "selection",
     option_choices = list(
       list(method = "spearman", top_n = 5),
       list(method = "spearman", top_n = 10)
@@ -112,7 +112,7 @@ test_that("user-supplied option names are respected", {
 
   cmp <- compare_pipelines(
     Y = d$Y, X = d$X,
-    option_type    = "filtration",
+    option_type    = "selection",
     option_choices = list(
       loose = list(method = "spearman", top_n = 5),
       tight = list(method = "spearman", top_n = 15)
@@ -184,7 +184,7 @@ test_that("print and plot methods run without error", {
 
   cmp <- compare_pipelines(
     Y = d$Y, X = d$X,
-    option_type    = "filtration",
+    option_type    = "selection",
     option_choices = list(
       list(method = "spearman", top_n = 5),
       list(method = "variance", top_n = 5)

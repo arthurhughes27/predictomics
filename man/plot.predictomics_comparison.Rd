@@ -4,7 +4,7 @@
 \alias{plot.predictomics_comparison}
 \title{Plot a predictomics_comparison object}
 \usage{
-\method{plot}{predictomics_comparison}(x, metric = x$metric, sort = TRUE, ...)
+\method{plot}{predictomics_comparison}(x, metric = x$metric, sort = FALSE, ...)
 }
 \arguments{
 \item{x}{A \code{predictomics_comparison} object returned by
@@ -14,8 +14,10 @@
 \code{"RMSE"}, \code{"sRMSE"}, \code{"R2"}, \code{"SpearmanR"}, or
 \code{"all"} (facet over all four). Defaults to \code{x$metric}.}
 
-\item{sort}{Logical. If \code{TRUE} (default), pipelines are ordered by
-the plotted metric (or by \code{x$metric} when \code{metric = "all"}).}
+\item{sort}{Logical. If \code{TRUE}, pipelines are ordered by
+the plotted metric (or by \code{x$metric} when \code{metric = "all"}).
+Defaults to \code{FALSE}, keeping the order in which pipelines were
+supplied (Baseline, Reference, then the \code{K} options in order).}
 
 \item{...}{Additional arguments passed to \code{ggplot2::theme}.}
 }
