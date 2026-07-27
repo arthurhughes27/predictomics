@@ -40,6 +40,18 @@
 #' operates on the fold-change-transformed dataset as normal. This mode is
 #' not compatible with \code{selection_params$rise_paired = TRUE}.
 #'
+#' If \code{selection_params$method = "dearseq"} is specified, a
+#' differential expression filter (\code{dearseq::dear_seq()}) is applied
+#' \strong{once, on the full, untransformed dataset, before any engineering
+#' (including \code{gene_level_fc}) or other selection, and regardless of
+#' \code{outside_cv}} - differential expression analysis is not meaningful on
+#' transformed data, so this is a deliberate exception to the fold-safe
+#' default described above. The resulting gene list is used to filter
+#' \code{X} before the rest of the pipeline runs as normal; \code{dearseq}
+#' fully replaces the selection step for that call (no further per-fold or
+#' outside-cv selection is performed). See \code{\link{run_selection}} for
+#' the \code{"classic"}/\code{"paired"} modes and hyperparameters.
+#'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
 #' selection, immediately before model fitting. Treatment is never passed
@@ -107,10 +119,15 @@
 #'   \code{engineering_params$gene_level_fc = TRUE} is used, in which case
 #'   every individual must have exactly two observations: one at
 #'   \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
-#'   (post-treatment). Pass \code{NULL} (default) otherwise.
+#'   (post-treatment). Also required when
+#'   \code{selection_params$dearseq_mode = "paired"} is used (same pairing
+#'   requirement), and optionally used to restrict
+#'   \code{selection_params$dearseq_mode = "classic"} to
+#'   \code{timepoint == 1} rows. Pass \code{NULL} (default) otherwise.
 #' @param timepoint A binary numeric vector of length n (0 = pre-treatment,
 #'   1 = post-treatment), paired with \code{individual_id}. Required when
-#'   \code{engineering_params$gene_level_fc = TRUE} is used. Pass
+#'   \code{engineering_params$gene_level_fc = TRUE} or
+#'   \code{selection_params$dearseq_mode = "paired"} is used. Pass
 #'   \code{NULL} (default) otherwise.
 #' @param verbose Logical. If \code{TRUE}, prints progress messages throughout.
 #'   Defaults to \code{TRUE}.
@@ -142,6 +159,11 @@
 #'     \item{\code{n_samples}}{Integer. Number of samples.}
 #'     \item{\code{n_features_input}}{Integer. Number of features in the input
 #'       \code{X}.}
+#'     \item{\code{dearseq_selection}}{A list containing
+#'       \code{selected_features}, \code{selection_scores} (adjusted
+#'       p-values for all genes), \code{dearseq_mode}, and \code{n_selected}
+#'       from the upfront dearseq filter. \code{NULL} if
+#'       \code{selection_params$method != "dearseq"}.}
 #'     \item{\code{fold_selection_diagnostics}}{A list of length
 #'       \code{n_folds}, each element containing \code{selected_features},
 #'       \code{selection_scores}, and \code{n_selected} for that fold.
@@ -241,11 +263,13 @@ predict_cv <- function(Y,
   is_gene_level_fc <- !is.null(engineering_params) &&
     isTRUE(engineering_params$gene_level_fc)
 
-  # treatment_pipeline/covariates_pipeline are used for all downstream
-  # computation; treatment/covariates are left untouched so that the returned
-  # result object reflects the arguments exactly as supplied by the user.
-  treatment_pipeline  <- treatment
-  covariates_pipeline <- covariates
+  # treatment_pipeline/covariates_pipeline/selection_params_pipeline are used
+  # for all downstream computation; treatment/covariates/selection_params are
+  # left untouched so that the returned result object reflects the arguments
+  # exactly as supplied by the user.
+  treatment_pipeline       <- treatment
+  covariates_pipeline      <- covariates
+  selection_params_pipeline <- selection_params
 
   # ---------------------------------------------------------------------------
   # 1b. Detect paired RISE mode
@@ -264,14 +288,62 @@ predict_cv <- function(Y,
   }
 
   # ---------------------------------------------------------------------------
+  # 1b2. Apply dearseq upfront gene filtering (before CV, before any
+  # engineering - including gene_level_fc - or other selection). Runs on the
+  # raw, untransformed data regardless of outside_cv, since differential
+  # expression analysis is not meaningful on transformed data.
+  # ---------------------------------------------------------------------------
+  is_dearseq <- !is.null(selection_params) &&
+    isTRUE(selection_params$method == "dearseq")
+
+  dearseq_selection <- NULL
+
+  if (is_dearseq) {
+
+    if (verbose) {
+      message(
+        "[predictomics] Applying dearseq differential expression filtering ",
+        "once on the full, untransformed dataset (not per fold, and ",
+        "regardless of outside_cv), since DEA is not meaningful on ",
+        "transformed data. The resulting gene list is then used to filter ",
+        "the dataset before any further engineering or selection."
+      )
+    }
+
+    dea_fit <- run_selection(
+      X_train       = X,
+      Y_train       = NULL,
+      covariates    = covariates,
+      treatment     = treatment,
+      individual_id = individual_id,
+      timepoint     = timepoint,
+      params        = selection_params
+    )
+
+    X <- X[, dea_fit$selected_features, drop = FALSE]
+    p <- ncol(X)
+
+    dearseq_selection <- list(
+      selected_features = dea_fit$selected_features,
+      selection_scores  = dea_fit$selection_scores,
+      dearseq_mode      = selection_params$dearseq_mode %||% "classic",
+      n_selected        = length(dea_fit$selected_features)
+    )
+
+    # dearseq fully replaces the selection step for this call - suppress the
+    # normal per-fold/outside-cv selection logic downstream.
+    selection_params_pipeline <- NULL
+  }
+
+  # ---------------------------------------------------------------------------
   # 1c. Apply gene-level fold-change transformation (before CV, before any
   # other engineering/selection)
   # ---------------------------------------------------------------------------
   if (is_gene_level_fc) {
 
-    .validate_gene_level_fc_inputs(individual_id = individual_id,
-                                   timepoint     = timepoint,
-                                   Y             = Y)
+    .validate_individual_timepoint_pairing(individual_id = individual_id,
+                                           timepoint     = timepoint,
+                                           n             = length(Y))
 
     fc_fit <- .compute_gene_level_fc(X             = X,
                                      Y             = Y,
@@ -422,7 +494,7 @@ predict_cv <- function(Y,
       }
     }
 
-    if (!is.null(selection_params)) {
+    if (!is.null(selection_params_pipeline)) {
       if (verbose) message("[predictomics] Applying feature selection outside CV loop.")
       sel_fit <- run_selection(
         X_train    = if (is_paired_rise) X_full else X_processed,
@@ -434,7 +506,7 @@ predict_cv <- function(Y,
             if (is_paired_rise) treatment_full else treatment_pipeline
           )
         else NULL,
-        params     = selection_params
+        params     = selection_params_pipeline
       )
       # Subset selected features to post-treatment X_processed for modelling
       X_processed <- X_processed[, sel_fit$selected_features, drop = FALSE]
@@ -462,7 +534,7 @@ predict_cv <- function(Y,
           Y                  = Y,
           outside_cv         = outside_cv,
           engineering_params = engineering_params,
-          selection_params   = selection_params,
+          selection_params   = selection_params_pipeline,
           model_params       = model_params,
           treatment          = treatment_pipeline,
           treatment_mat      = treatment_mat,
@@ -482,7 +554,7 @@ predict_cv <- function(Y,
   # 8. Assemble results from fold list
   # ---------------------------------------------------------------------------
   predictions                        <- numeric(n)
-  fold_selection_diagnostics         <- if (!is.null(selection_params))
+  fold_selection_diagnostics         <- if (!is.null(selection_params_pipeline))
     vector("list", folds) else NULL
   fold_embedded_selection_diagnostics <- if (is_embedded)
     vector("list", folds) else NULL
@@ -491,7 +563,7 @@ predict_cv <- function(Y,
     test_idx              <- which(fold_ids == k)
     predictions[test_idx] <- fold_results[[k]]$predictions[test_idx]
 
-    if (!is.null(selection_params))
+    if (!is.null(selection_params_pipeline))
       fold_selection_diagnostics[[k]] <- fold_results[[k]]$selection_diagnostics
 
     if (is_embedded)
@@ -523,6 +595,7 @@ predict_cv <- function(Y,
       n_samples_total                     = length(Y_full),
       paired_rise                         = is_paired_rise,
       n_features_input                    = p,
+      dearseq_selection                   = dearseq_selection,
       fold_selection_diagnostics          = fold_selection_diagnostics,
       outside_cv_selection                = outside_cv_selection,
       fold_embedded_selection_diagnostics = fold_embedded_selection_diagnostics,

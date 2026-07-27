@@ -9,6 +9,8 @@ run_selection(
   Y_train = NULL,
   covariates = NULL,
   treatment = NULL,
+  individual_id = NULL,
+  timepoint = NULL,
   params
 )
 }
@@ -25,15 +27,30 @@ baseline model for \code{"relative_gain"}. Ignored for all other methods.
 Pass \code{NULL} (default) for no covariates (intercept-only baseline).}
 
 \item{treatment}{A binary numeric vector of length n with values 0 and 1,
-encoding treatment group membership. Required for \code{"rise"}; ignored
-for all other methods. Pass \code{NULL} (default) if not applicable.}
+encoding treatment group membership. Required for \code{"rise"} and for
+\code{"dearseq"} with \code{dearseq_mode = "classic"}; optionally used
+to restrict rows for \code{"dearseq"} with
+\code{dearseq_mode = "paired"}. Ignored for all other methods. Pass
+\code{NULL} (default) if not applicable.}
+
+\item{individual_id}{Vector of length n identifying individuals. Required
+for \code{"dearseq"} with \code{dearseq_mode = "paired"} (used as
+\code{sample_group}); optionally used (together with \code{timepoint})
+to restrict rows for \code{dearseq_mode = "classic"}. Ignored for all
+other methods. Pass \code{NULL} (default) if not applicable.}
+
+\item{timepoint}{A binary numeric vector of length n (0/1), paired with
+\code{individual_id}. Required for \code{"dearseq"} with
+\code{dearseq_mode = "paired"}; optionally used to restrict rows for
+\code{dearseq_mode = "classic"}. Ignored for all other methods. Pass
+\code{NULL} (default) if not applicable.}
 
 \item{params}{A named list of selection parameters with the following
 elements:
 \describe{
 \item{\code{method}}{Character string. One of \code{"variance"},
-\code{"pearson"}, \code{"spearman"}, or \code{"relative_gain"}.
-Required.}
+\code{"pearson"}, \code{"spearman"}, \code{"relative_gain"},
+\code{"rise"}, or \code{"dearseq"}. Required.}
 \item{\code{top_n}}{Positive integer. Number of top-ranked features to
 retain. Takes precedence over \code{threshold} if both are supplied.
 Either \code{top_n} or \code{threshold} must be specified.}
@@ -41,8 +58,8 @@ Either \code{top_n} or \code{threshold} must be specified.}
 to be retained. Used only when \code{top_n} is \code{NULL}. For
 \code{"variance"}, a minimum variance; for \code{"pearson"} and
 \code{"spearman"}, a minimum absolute correlation; for
-\code{"relative_gain"}, a minimum gain; for \code{"rise"}, a
-maximum adjusted p-value (e.g. \code{0.05}).}
+\code{"relative_gain"}, a minimum gain; for \code{"rise"} and
+\code{"dearseq"}, a maximum adjusted p-value (e.g. \code{0.05}).}
 \item{\code{rise_alpha}}{Numeric. Significance level passed to
 \code{rise.screen()} as \code{alpha}. Defaults to \code{0.05}.}
 \item{\code{rise_power_want_s}}{Numeric in (0,1). Desired power for
@@ -64,6 +81,25 @@ passed as \code{alternative}. One of \code{"less"} or
 \code{"two.sided"}. Defaults to \code{"two.sided"}.}
 \item{\code{rise_paired}}{Logical. Whether data are paired, passed as
 \code{paired}. Defaults to \code{FALSE}.}
+\item{\code{dearseq_mode}}{Character string. One of \code{"classic"}
+(default) or \code{"paired"}. See Details.}
+\item{\code{dearseq_which_test}}{Character string. Passed to
+\code{dear_seq()} as \code{which_test}. One of \code{"asymptotic"}
+(default) or \code{"permutation"}.}
+\item{\code{dearseq_preprocessed}}{Logical. Passed to \code{dear_seq()}
+as \code{preprocessed}. Defaults to \code{TRUE}.}
+\item{\code{dearseq_padjust_methods}}{Character string. Passed to
+\code{dear_seq()} as \code{padjust_methods}. One of
+\code{stats::p.adjust.methods}. Defaults to \code{"BH"}.}
+\item{\code{dearseq_which_weights}}{Character string. Passed to
+\code{dear_seq()} as \code{which_weights}. One of \code{"loclin"}
+(default), \code{"voom"}, or \code{"none"}.}
+\item{\code{dearseq_n_perm}}{Positive integer. Passed to
+\code{dear_seq()} as \code{n_perm}. Defaults to \code{1000}.}
+\item{\code{dearseq_bw}}{Character string or positive numeric. Passed
+to \code{dear_seq()} as \code{bw}. Defaults to \code{"nrd"}.}
+\item{\code{dearseq_kernel}}{Character string. Passed to
+\code{dear_seq()} as \code{kernel}. Defaults to \code{"gaussian"}.}
 \item{\code{metric}}{Character string. Metric used to evaluate
 prediction quality in \code{"relative_gain"}. One of \code{"rmse"},
 \code{"srmse"}, \code{"r2"}, or \code{"spearman"}. Defaults to
@@ -118,6 +154,27 @@ indicates that feature j improves prediction. Inner CV fold assignments
 are generated once and reused across all features, and the baseline
 predictions are computed once per inner fold. Supported metrics:
 \code{"rmse"}, \code{"srmse"}, \code{"r2"}, \code{"spearman"}.
+\item \code{"dearseq"}: features are ranked by adjusted p-value from a
+\code{dearseq::dear_seq()} differential expression analysis (requires
+the Suggested \pkg{dearseq} package). Two modes are supported, chosen
+via \code{dearseq_mode}:
+\itemize{
+\item \code{"classic"} (default): compares \code{treatment == 1} vs
+\code{treatment == 0} (\code{treatment} required). If
+\code{individual_id} and \code{timepoint} are also supplied,
+\code{X_train} is first restricted to \code{timepoint == 1} rows
+before the comparison is run.
+\item \code{"paired"}: compares \code{timepoint == 1} vs
+\code{timepoint == 0} (\code{individual_id} and \code{timepoint}
+required, with every individual having exactly one observation at
+each timepoint), with \code{sample_group = individual_id}. If
+\code{treatment} is also supplied, \code{X_train} is first
+restricted to \code{treatment == 1} rows before the comparison is
+run.
+}
+In both cases, adjusted p-values are computed only from the (possibly
+row-restricted) comparison, but apply to \emph{all} columns of
+\code{X_train} (no columns are dropped before scoring).
 }
 
 All scores are computed on \code{X_train} only. The selected feature names
