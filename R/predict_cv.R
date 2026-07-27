@@ -27,6 +27,19 @@
 #' **This will produce optimistically biased performance estimates and is
 #' encouraged to be used for exploratory analysis only.**
 #'
+#' If \code{engineering_params$gene_level_fc = TRUE} is specified,
+#' \code{individual_id} and \code{timepoint} must also be supplied. Every
+#' individual must have exactly two observations, one at
+#' \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
+#' (post-treatment); otherwise an informative error is raised. Before the CV
+#' loop, any other engineering, or selection is performed, each individual's
+#' paired rows are replaced by a single row equal to the post-treatment minus
+#' pre-treatment value for every feature (and the response \code{Y} is taken
+#' from the post-treatment observation). \code{individual_id} and
+#' \code{timepoint} are then discarded and the remainder of the pipeline
+#' operates on the fold-change-transformed dataset as normal. This mode is
+#' not compatible with \code{selection_params$rise_paired = TRUE}.
+#'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
 #' selection, immediately before model fitting. Treatment is never passed
@@ -89,6 +102,16 @@
 #'   x q (covariates). Covariates are protected predictors always included in
 #'   model fitting. Factor columns are one-hot encoded via
 #'   \code{model.matrix}. Pass \code{NULL} (default) for no covariates.
+#' @param individual_id A vector of length n identifying which individual each
+#'   sample (row of \code{X}) belongs to. Required when
+#'   \code{engineering_params$gene_level_fc = TRUE} is used, in which case
+#'   every individual must have exactly two observations: one at
+#'   \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
+#'   (post-treatment). Pass \code{NULL} (default) otherwise.
+#' @param timepoint A binary numeric vector of length n (0 = pre-treatment,
+#'   1 = post-treatment), paired with \code{individual_id}. Required when
+#'   \code{engineering_params$gene_level_fc = TRUE} is used. Pass
+#'   \code{NULL} (default) otherwise.
 #' @param verbose Logical. If \code{TRUE}, prints progress messages throughout.
 #'   Defaults to \code{TRUE}.
 #'
@@ -186,6 +209,8 @@ predict_cv <- function(Y,
                        treatment           = NULL,
                        treatment_predictor = FALSE,
                        covariates          = NULL,
+                       individual_id       = NULL,
+                       timepoint           = NULL,
                        verbose             = TRUE) {
 
   cl <- match.call()
@@ -211,14 +236,77 @@ predict_cv <- function(Y,
   .validate_params_list(params = model_params,       arg_name = "model_params")
 
   # ---------------------------------------------------------------------------
+  # 1a. Detect gene-level fold-change (gene_level_fc) engineering
+  # ---------------------------------------------------------------------------
+  is_gene_level_fc <- !is.null(engineering_params) &&
+    isTRUE(engineering_params$gene_level_fc)
+
+  # treatment_pipeline/covariates_pipeline are used for all downstream
+  # computation; treatment/covariates are left untouched so that the returned
+  # result object reflects the arguments exactly as supplied by the user.
+  treatment_pipeline  <- treatment
+  covariates_pipeline <- covariates
+
+  # ---------------------------------------------------------------------------
   # 1b. Detect paired RISE mode
   # ---------------------------------------------------------------------------
   is_paired_rise <- !is.null(selection_params) &&
     isTRUE(selection_params$method == "rise") &&
     isTRUE(selection_params$rise_paired)
 
+  if (is_gene_level_fc && is_paired_rise) {
+    stop(
+      "[predictomics] engineering_params$gene_level_fc = TRUE is not ",
+      "compatible with selection_params$rise_paired = TRUE. Set ",
+      "rise_paired = FALSE (or omit it) to use gene_level_fc.",
+      call. = FALSE
+    )
+  }
+
+  # ---------------------------------------------------------------------------
+  # 1c. Apply gene-level fold-change transformation (before CV, before any
+  # other engineering/selection)
+  # ---------------------------------------------------------------------------
+  if (is_gene_level_fc) {
+
+    .validate_gene_level_fc_inputs(individual_id = individual_id,
+                                   timepoint     = timepoint,
+                                   Y             = Y)
+
+    fc_fit <- .compute_gene_level_fc(X             = X,
+                                     Y             = Y,
+                                     individual_id = individual_id,
+                                     timepoint     = timepoint,
+                                     treatment     = treatment,
+                                     covariates    = covariates)
+
+    if (verbose) {
+      message(
+        "[predictomics] Applied gene_level_fc engineering: collapsed ", n,
+        " paired observations into ", nrow(fc_fit$X), " individual-level ",
+        "fold-change rows (post-treatment - pre-treatment)."
+      )
+    }
+
+    X                   <- fc_fit$X
+    Y                   <- fc_fit$Y
+    treatment_pipeline  <- fc_fit$treatment
+    covariates_pipeline <- fc_fit$covariates
+    n                   <- length(Y)
+    p                   <- ncol(X)
+
+    if (folds > n)
+      stop(
+        "[predictomics] folds (", folds, ") exceeds the number of ",
+        "individuals (", n, ") after the gene_level_fc transformation. ",
+        "Reduce 'folds' or use cv_type = 'loo'.",
+        call. = FALSE
+      )
+    folds <- if (cv_type == "loo") n else folds
+  }
+
   if (is_paired_rise) {
-    .validate_paired_rise_treatment(treatment)
+    .validate_paired_rise_treatment(treatment_pipeline)
     message(
       "[predictomics] Paired RISE mode detected: treatment = 1 indicates ",
       "post-treatment and treatment = 0 indicates pre-treatment.\n",
@@ -266,14 +354,14 @@ predict_cv <- function(Y,
   # ---------------------------------------------------------------------------
   # 5. Prepare protected predictor matrices (once, outside loop - no leakage)
   # ---------------------------------------------------------------------------
-  treatment_mat <- if (!is.null(treatment) && treatment_predictor) {
-    .prepare_treatment_matrix(treatment)
+  treatment_mat <- if (!is.null(treatment_pipeline) && treatment_predictor) {
+    .prepare_treatment_matrix(treatment_pipeline)
   } else {
     NULL
   }
 
-  covariate_mat <- if (!is.null(covariates)) {
-    .prepare_covariate_matrix(covariates)
+  covariate_mat <- if (!is.null(covariates_pipeline)) {
+    .prepare_covariate_matrix(covariates_pipeline)
   } else {
     NULL
   }
@@ -288,11 +376,11 @@ predict_cv <- function(Y,
   X_processed        <- X   # initialise here for paired RISE subsetting
   X_full             <- X_processed
   Y_full             <- Y
-  treatment_full     <- treatment
+  treatment_full     <- treatment_pipeline
   covariate_mat_full <- covariate_mat
 
   if (is_paired_rise) {
-    post_idx      <- which(treatment == 1)
+    post_idx      <- which(treatment_pipeline == 1)
     X_processed   <- X_processed[post_idx, , drop = FALSE]
     Y             <- Y[post_idx]
     covariate_mat <- if (!is.null(covariate_mat))
@@ -341,9 +429,9 @@ predict_cv <- function(Y,
         Y_train    = if (is_paired_rise) Y_full else Y,
         covariates = if (is_paired_rise) covariate_mat_full
         else covariate_mat,
-        treatment  = if (!is.null(treatment))
+        treatment  = if (!is.null(treatment_pipeline))
           .coerce_treatment_binary(
-            if (is_paired_rise) treatment_full else treatment
+            if (is_paired_rise) treatment_full else treatment_pipeline
           )
         else NULL,
         params     = selection_params
@@ -376,7 +464,7 @@ predict_cv <- function(Y,
           engineering_params = engineering_params,
           selection_params   = selection_params,
           model_params       = model_params,
-          treatment          = treatment,
+          treatment          = treatment_pipeline,
           treatment_mat      = treatment_mat,
           covariate_mat      = covariate_mat,
           is_paired_rise     = is_paired_rise,
