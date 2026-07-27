@@ -427,6 +427,81 @@
 
 
 # -----------------------------------------------------------------------------
+#' Validate individual_id/timepoint for gene_level_fc engineering
+#'
+#' @description
+#' Checks that \code{individual_id} and \code{timepoint} are supplied, have
+#' the correct length and type, and that every individual has exactly two
+#' observations, one at each timepoint (0 = pre-treatment, 1 =
+#' post-treatment). Called from \code{predict_cv} when
+#' \code{engineering_params$method = "gene_level_fc"} is detected.
+#'
+#' @param individual_id Vector of length n identifying individuals, or
+#'   \code{NULL}.
+#' @param timepoint Binary numeric vector of length n (0/1), or \code{NULL}.
+#' @param Y The response vector, used for length compatibility checks.
+#' @return Invisibly returns \code{NULL} if validation passes.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.validate_gene_level_fc_inputs <- function(individual_id, timepoint, Y) {
+
+  if (is.null(individual_id) || is.null(timepoint))
+    stop(
+      "[predictomics] engineering_params$method = 'gene_level_fc' requires ",
+      "both 'individual_id' and 'timepoint' to be supplied to predict_cv().",
+      call. = FALSE
+    )
+
+  n <- length(Y)
+
+  if (length(individual_id) != n)
+    stop("[predictomics] individual_id must have the same length as Y (",
+         n, ").", call. = FALSE)
+
+  if (length(timepoint) != n)
+    stop("[predictomics] timepoint must have the same length as Y (",
+         n, ").", call. = FALSE)
+
+  if (anyNA(individual_id))
+    stop("[predictomics] individual_id contains NA values.", call. = FALSE)
+
+  if (anyNA(timepoint))
+    stop("[predictomics] timepoint contains NA values.", call. = FALSE)
+
+  if (!is.numeric(timepoint) || !all(timepoint %in% c(0, 1)))
+    stop(
+      "[predictomics] timepoint must be a binary numeric vector (0 = ",
+      "pre-treatment, 1 = post-treatment).", call. = FALSE
+    )
+
+  counts   <- table(individual_id)
+  bad_n    <- names(counts)[counts != 2L]
+  if (length(bad_n) > 0L)
+    stop(
+      "[predictomics] Each individual must have exactly 2 observations for ",
+      "gene_level_fc (one pre-treatment and one post-treatment). The ",
+      "following individual(s) do not: ", paste(bad_n, collapse = ", "), ".",
+      call. = FALSE
+    )
+
+  bad_tp <- character(0)
+  for (id in names(counts)) {
+    tp_id <- timepoint[individual_id == id]
+    if (!setequal(tp_id, c(0, 1))) bad_tp <- c(bad_tp, id)
+  }
+  if (length(bad_tp) > 0L)
+    stop(
+      "[predictomics] Each individual must have exactly one pre-treatment ",
+      "(timepoint = 0) and one post-treatment (timepoint = 1) observation ",
+      "for gene_level_fc. The following individual(s) violate this: ",
+      paste(bad_tp, collapse = ", "), ".", call. = FALSE
+    )
+
+  invisible(NULL)
+}
+
+
+# -----------------------------------------------------------------------------
 #' Validate the covariates matrix or data frame
 #'
 #' @description

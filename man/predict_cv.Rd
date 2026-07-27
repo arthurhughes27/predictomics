@@ -17,6 +17,8 @@ predict_cv(
   treatment = NULL,
   treatment_predictor = FALSE,
   covariates = NULL,
+  individual_id = NULL,
+  timepoint = NULL,
   verbose = TRUE
 )
 }
@@ -67,6 +69,18 @@ Ignored when \code{treatment = NULL}. Defaults to \code{FALSE}.}
 x q (covariates). Covariates are protected predictors always included in
 model fitting. Factor columns are one-hot encoded via
 \code{model.matrix}. Pass \code{NULL} (default) for no covariates.}
+
+\item{individual_id}{A vector of length n identifying which individual each
+sample (row of \code{X}) belongs to. Required when
+\code{engineering_params$method = "gene_level_fc"} is used, in which case
+every individual must have exactly two observations: one at
+\code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
+(post-treatment). Pass \code{NULL} (default) otherwise.}
+
+\item{timepoint}{A binary numeric vector of length n (0 = pre-treatment,
+1 = post-treatment), paired with \code{individual_id}. Required when
+\code{engineering_params$method = "gene_level_fc"} is used. Pass
+\code{NULL} (default) otherwise.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints progress messages throughout.
 Defaults to \code{TRUE}.}
@@ -133,6 +147,19 @@ If \code{outside_cv = TRUE}, engineering and selection steps are instead
 applied to the full dataset before the CV loop begins.
 \strong{This will produce optimistically biased performance estimates and is
 encouraged to be used for exploratory analysis only.}
+
+If \code{engineering_params$method = "gene_level_fc"} is specified,
+\code{individual_id} and \code{timepoint} must also be supplied. Every
+individual must have exactly two observations, one at
+\code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
+(post-treatment); otherwise an informative error is raised. Before the CV
+loop, any other engineering, or selection is performed, each individual's
+paired rows are replaced by a single row equal to the post-treatment minus
+pre-treatment value for every feature (and the response \code{Y} is taken
+from the post-treatment observation). \code{individual_id} and
+\code{timepoint} are then discarded and the remainder of the pipeline
+operates on the fold-change-transformed dataset as normal. This mode is
+not compatible with \code{selection_params$rise_paired = TRUE}.
 
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and
