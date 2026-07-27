@@ -171,11 +171,15 @@
 #'     \item{\code{n_features_input}}{Integer. Number of features in the input
 #'       \code{X}.}
 #'     \item{\code{dearseq_selection}}{A list containing
-#'       \code{selected_features} (gene names, even when
-#'       \code{dearseq_level = "geneset"}), \code{selection_scores} (adjusted
-#'       p-values - per gene for \code{dearseq_level = "gene"}, per geneset
-#'       for \code{dearseq_level = "geneset"}), \code{dearseq_mode},
-#'       \code{dearseq_level}, and \code{n_selected} from the upfront
+#'       \code{selected_features} (gene names for
+#'       \code{dearseq_level = "gene"}; \strong{geneset} names for
+#'       \code{dearseq_level = "geneset"} - \code{X} itself is still
+#'       filtered by the resolved member genes of those genesets),
+#'       \code{selection_scores} (adjusted p-values - per gene for
+#'       \code{dearseq_level = "gene"}, per geneset for
+#'       \code{dearseq_level = "geneset"}), \code{dearseq_mode},
+#'       \code{dearseq_level}, and \code{n_selected} (number of genes or
+#'       genesets selected, matching \code{dearseq_level}) from the upfront
 #'       dearseq filter. \code{NULL} if
 #'       \code{selection_params$method != "dearseq"}.}
 #'     \item{\code{fold_selection_diagnostics}}{A list of length
@@ -356,12 +360,25 @@ predict_cv <- function(Y,
     X <- X[, dea_fit$selected_features, drop = FALSE]
     p <- ncol(X)
 
+    # For dearseq_level = "geneset", report selection at the geneset level
+    # (selected genesets, not their resolved member genes) in the returned
+    # diagnostics, even though X is filtered by the resolved gene names above.
+    dearseq_selected <- if (dearseq_level == "geneset") {
+      if (!is.null(dea_fit$top_n)) {
+        names(dea_fit$selection_scores)[seq_len(dea_fit$top_n)]
+      } else {
+        names(dea_fit$selection_scores)[dea_fit$selection_scores <= dea_fit$threshold]
+      }
+    } else {
+      dea_fit$selected_features
+    }
+
     dearseq_selection <- list(
-      selected_features = dea_fit$selected_features,
+      selected_features = dearseq_selected,
       selection_scores  = dea_fit$selection_scores,
       dearseq_mode      = selection_params$dearseq_mode %||% "classic",
       dearseq_level     = dearseq_level,
-      n_selected        = length(dea_fit$selected_features)
+      n_selected        = length(dearseq_selected)
     )
 
     # dearseq fully replaces the selection step for this call - suppress the
