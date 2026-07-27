@@ -11,8 +11,12 @@
   X <- matrix(rnorm(n * p), nrow = n, ncol = p)
   colnames(X) <- paste0("gene", seq_len(p))
   Y <- rnorm(n)
+  genesets <- list(
+    setA = paste0("gene", 1:4),
+    setB = paste0("gene", 5:8)
+  )
   list(X = X, Y = Y, individual_id = individual_id, timepoint = timepoint,
-       treatment = treatment)
+       treatment = treatment, genesets = genesets)
 }
 
 test_that("selection_params$method = 'dearseq' is a valid option with sensible defaults", {
@@ -185,6 +189,120 @@ test_that("run_selection computes dearseq scores for all genes (paired mode)", {
 
   expect_equal(length(res$selection_scores), ncol(d$X))
   expect_setequal(names(res$selection_scores), colnames(d$X))
+})
+
+# -----------------------------------------------------------------------------
+# dearseq_level = "geneset"
+# -----------------------------------------------------------------------------
+
+test_that("dearseq_level defaults to 'gene' and 'geneset' requires genesets", {
+  d <- .make_dearseq_data()
+
+  expect_error(
+    .validate_selection_params(
+      list(method = "dearseq", threshold = 0.05, dearseq_level = "geneset"),
+      p = ncol(d$X)
+    ),
+    "genesets"
+  )
+
+  expect_error(
+    .validate_selection_params(
+      list(method = "dearseq", threshold = 0.05, dearseq_level = "geneset",
+           genesets = d$genesets),
+      p = ncol(d$X)
+    ),
+    NA
+  )
+})
+
+test_that("dearseq_level must be 'gene' or 'geneset'", {
+  d <- .make_dearseq_data()
+
+  expect_error(
+    .validate_selection_params(
+      list(method = "dearseq", threshold = 0.05, dearseq_level = "bad"),
+      p = ncol(d$X)
+    ),
+    "dearseq_level"
+  )
+})
+
+test_that("top_n for dearseq geneset-level is bounded by the number of genesets, not gene columns", {
+  d <- .make_dearseq_data()
+
+  expect_error(
+    .validate_selection_params(
+      list(method = "dearseq", dearseq_level = "geneset", genesets = d$genesets,
+           top_n = 3),
+      p = ncol(d$X)
+    ),
+    "genesets"
+  )
+
+  expect_error(
+    .validate_selection_params(
+      list(method = "dearseq", dearseq_level = "geneset", genesets = d$genesets,
+           top_n = 2),
+      p = ncol(d$X)
+    ),
+    NA
+  )
+})
+
+test_that("run_selection resolves selected genesets to member gene names (geneset-level)", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+
+  res <- run_selection(
+    X_train   = d$X,
+    treatment = d$treatment,
+    params    = list(method = "dearseq", dearseq_mode = "classic",
+                     dearseq_level = "geneset", genesets = d$genesets,
+                     threshold = 1.1)
+  )
+
+  expect_equal(length(res$selection_scores), length(d$genesets))
+  expect_setequal(names(res$selection_scores), names(d$genesets))
+  expect_true(all(res$selected_features %in% colnames(d$X)))
+  expect_setequal(res$selected_features, colnames(d$X))
+})
+
+test_that("predict_cv stops when dearseq_level = 'gene' is combined with engineering genesets", {
+  d <- .make_dearseq_data()
+
+  expect_error(
+    predict_cv(
+      Y = d$Y, X = d$X,
+      selection_params   = list(method = "dearseq", dearseq_mode = "classic",
+                                threshold = 0.05),
+      engineering_params = list(method = "engineer", genesets = d$genesets,
+                                agg_method = "mean"),
+      treatment = d$treatment,
+      verbose   = FALSE
+    ),
+    "not compatible"
+  )
+})
+
+test_that("predict_cv allows dearseq_level = 'geneset' combined with engineering genesets", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+
+  expect_error(
+    predict_cv(
+      Y = d$Y, X = d$X,
+      folds = 2,
+      selection_params   = list(method = "dearseq", dearseq_mode = "classic",
+                                dearseq_level = "geneset", genesets = d$genesets,
+                                threshold = 1.1),
+      engineering_params = list(method = "engineer", genesets = d$genesets,
+                                agg_method = "mean"),
+      treatment = d$treatment,
+      verbose   = FALSE
+    ),
+    NA
+  )
 })
 
 test_that("predict_cv applies dearseq upfront, before gene_level_fc, regardless of outside_cv", {

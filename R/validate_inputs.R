@@ -116,6 +116,35 @@
 
 
 # -----------------------------------------------------------------------------
+#' Validate a named list of genesets
+#'
+#' @description
+#' Checks that \code{genesets} is a named list of character vectors of
+#' feature names. Shared by \code{engineering_params$genesets} (geneset
+#' aggregation) and \code{selection_params$genesets} (dearseq geneset-level
+#' DEA).
+#'
+#' @param genesets The genesets list to validate. Must not be \code{NULL}.
+#' @param arg_name Character string. The argument name, used in error
+#'   messages.
+#' @return Invisibly returns \code{NULL} if validation passes.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.validate_genesets_list <- function(genesets, arg_name) {
+
+  if (!is.list(genesets) || is.null(names(genesets)) ||
+      any(names(genesets) == ""))
+    stop("[predictomics] ", arg_name, " must be a named list.", call. = FALSE)
+
+  if (!all(vapply(genesets, is.character, logical(1))))
+    stop("[predictomics] Each element of ", arg_name, " must be a character ",
+         "vector of feature names.", call. = FALSE)
+
+  invisible(NULL)
+}
+
+
+# -----------------------------------------------------------------------------
 #' Validate simple scalar arguments
 #'
 #' @description
@@ -223,14 +252,7 @@
   genesets <- params$genesets
   if (!is.null(genesets)) {
 
-    if (!is.list(genesets) || is.null(names(genesets)) ||
-        any(names(genesets) == ""))
-      stop("[predictomics] engineering_params$genesets must be a named list.",
-           call. = FALSE)
-
-    if (!all(vapply(genesets, is.character, logical(1))))
-      stop("[predictomics] Each element of engineering_params$genesets must ",
-           "be a character vector of feature names.", call. = FALSE)
+    .validate_genesets_list(genesets, "engineering_params$genesets")
 
     agg_method <- params$agg_method
     if (is.null(agg_method) ||
@@ -398,14 +420,22 @@
     stop("[predictomics] selection_params must specify at least one of ",
          "'top_n' or 'threshold'.", call. = FALSE)
 
+  # For dearseq geneset-level selection, top_n counts genesets, not gene
+  # columns of X_train.
+  is_dearseq_geneset <- identical(params$method, "dearseq") &&
+    identical(params$dearseq_level %||% "gene", "geneset") &&
+    !is.null(params$genesets)
+  effective_p <- if (is_dearseq_geneset) length(params$genesets) else p
+  unit        <- if (is_dearseq_geneset) "genesets" else "features"
+
   if (!is.null(top_n)) {
     if (!is.numeric(top_n) || length(top_n) != 1L ||
         top_n != as.integer(top_n) || top_n < 1L)
       stop("[predictomics] selection_params$top_n must be a positive integer.",
            call. = FALSE)
-    if (top_n > p)
+    if (top_n > effective_p)
       stop("[predictomics] selection_params$top_n (", top_n, ") exceeds the ",
-           "number of available features (", p, ").", call. = FALSE)
+           "number of available ", unit, " (", effective_p, ").", call. = FALSE)
   }
 
   if (!is.null(threshold)) {
@@ -461,6 +491,18 @@
     if (!dearseq_mode %in% c("classic", "paired"))
       stop("[predictomics] selection_params$dearseq_mode must be 'classic' or ",
            "'paired'.", call. = FALSE)
+
+    dearseq_level <- params$dearseq_level %||% "gene"
+    if (!dearseq_level %in% c("gene", "geneset"))
+      stop("[predictomics] selection_params$dearseq_level must be 'gene' or ",
+           "'geneset'.", call. = FALSE)
+
+    if (dearseq_level == "geneset") {
+      if (is.null(params$genesets))
+        stop("[predictomics] selection_params$genesets must be provided ",
+             "when dearseq_level = 'geneset'.", call. = FALSE)
+      .validate_genesets_list(params$genesets, "selection_params$genesets")
+    }
 
     which_test <- params$dearseq_which_test %||% "asymptotic"
     if (!which_test %in% c("asymptotic", "permutation"))

@@ -83,6 +83,11 @@ passed as \code{alternative}. One of \code{"less"} or
 \code{paired}. Defaults to \code{FALSE}.}
 \item{\code{dearseq_mode}}{Character string. One of \code{"classic"}
 (default) or \code{"paired"}. See Details.}
+\item{\code{dearseq_level}}{Character string. One of \code{"gene"}
+(default) or \code{"geneset"}. See Details.}
+\item{\code{genesets}}{Named list of character vectors of feature
+names, in the same form as \code{engineering_params$genesets}.
+Required when \code{dearseq_level = "geneset"}; ignored otherwise.}
 \item{\code{dearseq_which_test}}{Character string. Passed to
 \code{dear_seq()} as \code{which_test}. One of \code{"asymptotic"}
 (default) or \code{"permutation"}.}
@@ -116,11 +121,16 @@ methods.}
 A named list containing:
 \describe{
 \item{\code{selected_features}}{Character vector of selected column
-names, in decreasing order of score.}
+names, in decreasing order of score. For \code{"dearseq"} with
+\code{dearseq_level = "geneset"}, this is the union of member genes
+of the selected genesets (restricted to \code{colnames(X_train)}),
+not geneset names.}
 \item{\code{selection_method}}{Character string. The method used.}
 \item{\code{selection_scores}}{Named numeric vector of scores for
 \emph{all} features, in decreasing order. For
-\code{"relative_gain"}, scores are the gain values.}
+\code{"relative_gain"}, scores are the gain values. For
+\code{"dearseq"} with \code{dearseq_level = "geneset"}, this is
+indexed by geneset name (not gene name).}
 \item{\code{top_n}}{Integer or \code{NULL}. The \code{top_n} value
 used after resolving precedence with \code{threshold}.}
 \item{\code{threshold}}{Numeric or \code{NULL}. The \code{threshold}
@@ -155,26 +165,35 @@ are generated once and reused across all features, and the baseline
 predictions are computed once per inner fold. Supported metrics:
 \code{"rmse"}, \code{"srmse"}, \code{"r2"}, \code{"spearman"}.
 \item \code{"dearseq"}: features are ranked by adjusted p-value from a
-\code{dearseq::dear_seq()} differential expression analysis (requires
-the Suggested \pkg{dearseq} package). Two modes are supported, chosen
-via \code{dearseq_mode}:
+dearseq differential expression analysis (requires the Suggested
+\pkg{dearseq} package). Two independent choices control the analysis:
 \itemize{
-\item \code{"classic"} (default): compares \code{treatment == 1} vs
-\code{treatment == 0} (\code{treatment} required). If
+\item \code{dearseq_mode} chooses \emph{which comparison} is run:
+\code{"classic"} (default) compares \code{treatment == 1} vs
+\code{treatment == 0} (\code{treatment} required); if
 \code{individual_id} and \code{timepoint} are also supplied,
 \code{X_train} is first restricted to \code{timepoint == 1} rows
-before the comparison is run.
-\item \code{"paired"}: compares \code{timepoint == 1} vs
-\code{timepoint == 0} (\code{individual_id} and \code{timepoint}
-required, with every individual having exactly one observation at
-each timepoint), with \code{sample_group = individual_id}. If
-\code{treatment} is also supplied, \code{X_train} is first
-restricted to \code{treatment == 1} rows before the comparison is
-run.
+before the comparison is run. \code{"paired"} compares
+\code{timepoint == 1} vs \code{timepoint == 0}
+(\code{individual_id} and \code{timepoint} required, with every
+individual having exactly one observation at each timepoint),
+with \code{sample_group = individual_id}; if \code{treatment} is
+also supplied, \code{X_train} is first restricted to
+\code{treatment == 1} rows before the comparison is run.
+\item \code{dearseq_level} chooses \emph{what is tested}:
+\code{"gene"} (default) calls \code{dearseq::dear_seq()} and
+scores every column of \code{X_train} individually. \code{"geneset"}
+calls \code{dearseq::dgsa_seq()} with \code{genesets} instead, and
+scores each geneset as a unit; the selected genesets (by
+\code{top_n}/\code{threshold} on their adjusted p-values) are then
+resolved to the union of their member genes (restricted to
+columns of \code{X_train}) for \code{selected_features}, while
+\code{selection_scores} remains indexed by geneset name.
 }
-In both cases, adjusted p-values are computed only from the (possibly
-row-restricted) comparison, but apply to \emph{all} columns of
-\code{X_train} (no columns are dropped before scoring).
+In all cases, only \emph{rows} are ever restricted before the
+comparison; adjusted p-values are computed from the (possibly
+row-restricted) comparison but scoring always considers every gene
+(or geneset) supplied.
 }
 
 All scores are computed on \code{X_train} only. The selected feature names

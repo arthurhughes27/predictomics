@@ -41,7 +41,9 @@
 #' not compatible with \code{selection_params$rise_paired = TRUE}.
 #'
 #' If \code{selection_params$method = "dearseq"} is specified, a
-#' differential expression filter (\code{dearseq::dear_seq()}) is applied
+#' differential expression filter (\code{dearseq::dear_seq()}, or
+#' \code{dearseq::dgsa_seq()} when
+#' \code{selection_params$dearseq_level = "geneset"}) is applied
 #' \strong{once, on the full, untransformed dataset, before any engineering
 #' (including \code{gene_level_fc}) or other selection, and regardless of
 #' \code{outside_cv}} - differential expression analysis is not meaningful on
@@ -50,7 +52,13 @@
 #' \code{X} before the rest of the pipeline runs as normal; \code{dearseq}
 #' fully replaces the selection step for that call (no further per-fold or
 #' outside-cv selection is performed). See \code{\link{run_selection}} for
-#' the \code{"classic"}/\code{"paired"} modes and hyperparameters.
+#' the \code{"classic"}/\code{"paired"} modes, the \code{"gene"}/
+#' \code{"geneset"} levels, and hyperparameters.
+#' \code{selection_params$dearseq_level = "gene"} (the default) cannot be
+#' combined with \code{engineering_params$genesets}, since gene-level DEA
+#' filtering typically leaves most genesets with no surviving member genes;
+#' use \code{dearseq_level = "geneset"} instead if geneset-level engineering
+#' is required downstream.
 #'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
@@ -160,9 +168,12 @@
 #'     \item{\code{n_features_input}}{Integer. Number of features in the input
 #'       \code{X}.}
 #'     \item{\code{dearseq_selection}}{A list containing
-#'       \code{selected_features}, \code{selection_scores} (adjusted
-#'       p-values for all genes), \code{dearseq_mode}, and \code{n_selected}
-#'       from the upfront dearseq filter. \code{NULL} if
+#'       \code{selected_features} (gene names, even when
+#'       \code{dearseq_level = "geneset"}), \code{selection_scores} (adjusted
+#'       p-values - per gene for \code{dearseq_level = "gene"}, per geneset
+#'       for \code{dearseq_level = "geneset"}), \code{dearseq_mode},
+#'       \code{dearseq_level}, and \code{n_selected} from the upfront
+#'       dearseq filter. \code{NULL} if
 #'       \code{selection_params$method != "dearseq"}.}
 #'     \item{\code{fold_selection_diagnostics}}{A list of length
 #'       \code{n_folds}, each element containing \code{selected_features},
@@ -300,6 +311,23 @@ predict_cv <- function(Y,
 
   if (is_dearseq) {
 
+    dearseq_level <- selection_params$dearseq_level %||% "gene"
+
+    if (dearseq_level == "gene" && !is.null(engineering_params) &&
+        !is.null(engineering_params$genesets)) {
+      stop(
+        "[predictomics] selection_params$method = 'dearseq' with ",
+        "dearseq_level = 'gene' is not compatible with ",
+        "engineering_params$genesets (geneset-level engineering). ",
+        "Gene-level DEA filtering typically leaves most genesets with no ",
+        "surviving member genes, causing downstream errors. Either set ",
+        "selection_params$dearseq_level = 'geneset' to filter by ",
+        "differentially expressed genesets instead, or remove ",
+        "engineering_params$genesets.",
+        call. = FALSE
+      )
+    }
+
     if (verbose) {
       message(
         "[predictomics] Applying dearseq differential expression filtering ",
@@ -327,6 +355,7 @@ predict_cv <- function(Y,
       selected_features = dea_fit$selected_features,
       selection_scores  = dea_fit$selection_scores,
       dearseq_mode      = selection_params$dearseq_mode %||% "classic",
+      dearseq_level     = dearseq_level,
       n_selected        = length(dea_fit$selected_features)
     )
 
