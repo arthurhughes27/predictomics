@@ -58,7 +58,10 @@
 #' combined with \code{engineering_params$genesets}, since gene-level DEA
 #' filtering typically leaves most genesets with no surviving member genes;
 #' use \code{dearseq_level = "geneset"} instead if geneset-level engineering
-#' is required downstream.
+#' is required downstream. With \code{dearseq_level = "geneset"}, any
+#' geneset in \code{engineering_params$genesets} left with no surviving
+#' genes after the dearseq filter is automatically dropped before
+#' engineering runs (with a message, if \code{verbose = TRUE}).
 #'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
@@ -274,13 +277,15 @@ predict_cv <- function(Y,
   is_gene_level_fc <- !is.null(engineering_params) &&
     isTRUE(engineering_params$gene_level_fc)
 
-  # treatment_pipeline/covariates_pipeline/selection_params_pipeline are used
-  # for all downstream computation; treatment/covariates/selection_params are
-  # left untouched so that the returned result object reflects the arguments
+  # treatment_pipeline/covariates_pipeline/selection_params_pipeline/
+  # engineering_params_pipeline are used for all downstream computation;
+  # treatment/covariates/selection_params/engineering_params are left
+  # untouched so that the returned result object reflects the arguments
   # exactly as supplied by the user.
-  treatment_pipeline       <- treatment
-  covariates_pipeline      <- covariates
+  treatment_pipeline        <- treatment
+  covariates_pipeline       <- covariates
   selection_params_pipeline <- selection_params
+  engineering_params_pipeline <- engineering_params
 
   # ---------------------------------------------------------------------------
   # 1b. Detect paired RISE mode
@@ -362,6 +367,30 @@ predict_cv <- function(Y,
     # dearseq fully replaces the selection step for this call - suppress the
     # normal per-fold/outside-cv selection logic downstream.
     selection_params_pipeline <- NULL
+
+    # If engineering_params$genesets is specified (only possible here when
+    # dearseq_level = "geneset", since dearseq_level = "gene" is rejected
+    # above), some genesets may have no genes left in the dearseq-filtered X.
+    # Drop them so downstream engineering doesn't error on empty overlaps.
+    if (!is.null(engineering_params) && !is.null(engineering_params$genesets)) {
+
+      genesets_filtered <- lapply(engineering_params$genesets, intersect,
+                                  y = colnames(X))
+      keep    <- vapply(genesets_filtered, length, integer(1)) > 0L
+      removed <- names(engineering_params$genesets)[!keep]
+
+      if (length(removed) > 0L) {
+        if (verbose) {
+          message(
+            "[predictomics] Removed ", length(removed), " geneset(s) from ",
+            "engineering_params$genesets with no surviving genes after the ",
+            "dearseq filter: ", paste(removed, collapse = ", "), "."
+          )
+        }
+        engineering_params_pipeline$genesets <-
+          engineering_params$genesets[keep]
+      }
+    }
   }
 
   # ---------------------------------------------------------------------------
@@ -508,11 +537,11 @@ predict_cv <- function(Y,
 
   if (outside_cv) {
 
-    if (!is.null(engineering_params)) {
+    if (!is.null(engineering_params_pipeline)) {
       if (verbose) message("[predictomics] Applying feature engineering outside CV loop.")
       eng_fit  <- run_engineering(
         X_train = if (is_paired_rise) X_full else X,
-        params  = engineering_params
+        params  = engineering_params_pipeline
       )
       if (is_paired_rise) {
         # Store full engineered matrix for RISE selection, then subset for modelling
@@ -562,7 +591,7 @@ predict_cv <- function(Y,
           X_processed        = X_processed,
           Y                  = Y,
           outside_cv         = outside_cv,
-          engineering_params = engineering_params,
+          engineering_params = engineering_params_pipeline,
           selection_params   = selection_params_pipeline,
           model_params       = model_params,
           treatment          = treatment_pipeline,
