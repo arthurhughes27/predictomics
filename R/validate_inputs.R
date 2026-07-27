@@ -234,10 +234,10 @@
 
     agg_method <- params$agg_method
     if (is.null(agg_method) ||
-        !agg_method %in% c("mean", "median", "sum", "pc1", "ssgsea"))
+        !agg_method %in% c("mean", "median", "sum", "pc1", "ssgsea", "gsva"))
       stop("[predictomics] engineering_params$agg_method must be one of ",
-           "'mean', 'median', 'sum', 'pc1', or 'ssgsea' when genesets are ",
-           "provided.", call. = FALSE)
+           "'mean', 'median', 'sum', 'pc1', 'ssgsea', or 'gsva' when ",
+           "genesets are provided.", call. = FALSE)
 
     if (identical(agg_method, "ssgsea")) {
 
@@ -262,6 +262,41 @@
       if (!is.logical(normalize) || length(normalize) != 1L)
         stop("[predictomics] engineering_params$ssgsea_normalize must be ",
              "TRUE or FALSE.", call. = FALSE)
+    }
+
+    if (identical(agg_method, "gsva")) {
+
+      kcdf <- params$gsva_kcdf %||% "Gaussian"
+      if (!kcdf %in% c("Gaussian", "Poisson", "none"))
+        stop("[predictomics] engineering_params$gsva_kcdf must be one of ",
+             "'Gaussian', 'Poisson', or 'none'.", call. = FALSE)
+
+      tau <- params$gsva_tau %||% 1
+      if (!is.numeric(tau) || length(tau) != 1L || tau < 0)
+        stop("[predictomics] engineering_params$gsva_tau must be a ",
+             "non-negative numeric value.", call. = FALSE)
+
+      max_diff <- params$gsva_max_diff %||% TRUE
+      if (!is.logical(max_diff) || length(max_diff) != 1L)
+        stop("[predictomics] engineering_params$gsva_max_diff must be TRUE ",
+             "or FALSE.", call. = FALSE)
+
+      abs_ranking <- params$gsva_abs_ranking %||% FALSE
+      if (!is.logical(abs_ranking) || length(abs_ranking) != 1L)
+        stop("[predictomics] engineering_params$gsva_abs_ranking must be ",
+             "TRUE or FALSE.", call. = FALSE)
+
+      min_size <- params$gsva_min_size %||% 1L
+      if (!is.numeric(min_size) || length(min_size) != 1L ||
+          min_size != as.integer(min_size) || min_size < 1L)
+        stop("[predictomics] engineering_params$gsva_min_size must be a ",
+             "positive integer.", call. = FALSE)
+
+      max_size <- params$gsva_max_size %||% Inf
+      if (!is.numeric(max_size) || length(max_size) != 1L ||
+          max_size < min_size)
+        stop("[predictomics] engineering_params$gsva_max_size must be a ",
+             "numeric value >= gsva_min_size.", call. = FALSE)
     }
   }
 
