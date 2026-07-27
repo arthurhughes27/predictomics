@@ -18,8 +18,6 @@ Invisibly returns \code{NULL} if validation passes.
 Checks that \code{selection_params} specifies a supported method, that at
 least one of \code{top_n} or \code{threshold} is provided, and that their
 values are valid. For \code{"relative_gain"}, also validates
-\code{metric} and \code{inner_folds}. For \code{"rise"} and
-\code{"dearseq"}, also validates their respective method-specific
-parameters.
+\code{metric} and \code{inner_folds}.
 }
 \keyword{internal}

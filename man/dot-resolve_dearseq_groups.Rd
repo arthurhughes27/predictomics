@@ -4,7 +4,13 @@
 \alias{.resolve_dearseq_groups}
 \title{Resolve the grouping variable, sample_group, and row subset for dearseq}
 \usage{
-.resolve_dearseq_groups(X_train, treatment, individual_id, timepoint, dearseq_mode)
+.resolve_dearseq_groups(
+  X_train,
+  treatment,
+  individual_id,
+  timepoint,
+  dearseq_mode
+)
 }
 \arguments{
 \item{X_train}{Numeric matrix. Training predictor matrix.}

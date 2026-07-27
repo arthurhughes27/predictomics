@@ -67,19 +67,19 @@ pipeline is fit. Defaults to \code{TRUE}.}
 An object of class \code{"predictomics_comparison"}, a named list
 containing:
 \describe{
-  \item{\code{results}}{A data frame with one row per successfully-fit
-    pipeline (\code{"Baseline"}, \code{"Reference"}, and the \code{K}
-    option labels), and columns \code{pipeline}, \code{role} (one of
-    \code{"baseline"}, \code{"reference"}, \code{"option"}),
-    \code{RMSE}, \code{sRMSE}, \code{R2}, \code{SpearmanR}.}
-  \item{\code{fits}}{A named list of the underlying \code{predictomics}
-    objects for each successfully-fit pipeline.}
-  \item{\code{option_type}}{The \code{option_type} argument.}
-  \item{\code{option_choices}}{The (labelled) \code{option_choices}
-    argument.}
-  \item{\code{reference_params}}{The \code{reference_params} argument.}
-  \item{\code{metric}}{The \code{metric} argument.}
-  \item{\code{call}}{The matched call.}
+\item{\code{results}}{A data frame with one row per successfully-fit
+pipeline (\code{"Baseline"}, \code{"Reference"}, and the \code{K}
+option labels), and columns \code{pipeline}, \code{role} (one of
+\code{"baseline"}, \code{"reference"}, \code{"option"}),
+\code{RMSE}, \code{sRMSE}, \code{R2}, \code{SpearmanR}.}
+\item{\code{fits}}{A named list of the underlying \code{predictomics}
+objects for each successfully-fit pipeline.}
+\item{\code{option_type}}{The \code{option_type} argument.}
+\item{\code{option_choices}}{The (labelled) \code{option_choices}
+argument.}
+\item{\code{reference_params}}{The \code{reference_params} argument.}
+\item{\code{metric}}{The \code{metric} argument.}
+\item{\code{call}}{The matched call.}
 }
 }
 \description{
@@ -98,15 +98,15 @@ Exactly one of \code{engineering_params}, \code{selection_params}, or
 \code{model_params} varies across the \code{K} alternative pipelines,
 selected by \code{option_type}:
 \itemize{
-  \item \code{"selection"}: each element of \code{option_choices}
-    replaces \code{reference_params$selection_params}; engineering and
-    model choice are held fixed at their reference values.
-  \item \code{"engineering"}: each element of \code{option_choices}
-    replaces \code{reference_params$engineering_params}; selection and
-    model choice are held fixed.
-  \item \code{"model"}: each element of \code{option_choices} replaces
-    \code{reference_params$model_params}; selection and engineering are
-    held fixed.
+\item \code{"selection"}: each element of \code{option_choices}
+replaces \code{reference_params$selection_params}; engineering and
+model choice are held fixed at their reference values.
+\item \code{"engineering"}: each element of \code{option_choices}
+replaces \code{reference_params$engineering_params}; selection and
+model choice are held fixed.
+\item \code{"model"}: each element of \code{option_choices} replaces
+\code{reference_params$model_params}; selection and engineering are
+held fixed.
 }
 \code{option_choices} should not include a configuration identical to the
 reference's corresponding stage; \code{compare_pipelines()} does not check
@@ -174,6 +174,6 @@ plot(cmp)
 }
 \seealso{
 \code{\link{predict_cv}}, \code{\link{metrics.predictomics}},
-  \code{\link{print.predictomics_comparison}},
-  \code{\link{plot.predictomics_comparison}}
+\code{\link{print.predictomics_comparison}},
+\code{\link{plot.predictomics_comparison}}
 }
