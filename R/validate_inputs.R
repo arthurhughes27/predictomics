@@ -233,10 +233,36 @@
            "be a character vector of feature names.", call. = FALSE)
 
     agg_method <- params$agg_method
-    if (is.null(agg_method) || !agg_method %in% c("mean", "median", "sum", "pc1"))
+    if (is.null(agg_method) ||
+        !agg_method %in% c("mean", "median", "sum", "pc1", "ssgsea"))
       stop("[predictomics] engineering_params$agg_method must be one of ",
-           "'mean', 'median', 'sum', or 'pc1' when genesets are provided.",
-           call. = FALSE)
+           "'mean', 'median', 'sum', 'pc1', or 'ssgsea' when genesets are ",
+           "provided.", call. = FALSE)
+
+    if (identical(agg_method, "ssgsea")) {
+
+      alpha <- params$ssgsea_alpha %||% 0.25
+      if (!is.numeric(alpha) || length(alpha) != 1L || alpha < 0)
+        stop("[predictomics] engineering_params$ssgsea_alpha must be a ",
+             "non-negative numeric value.", call. = FALSE)
+
+      min_size <- params$ssgsea_min_size %||% 1L
+      if (!is.numeric(min_size) || length(min_size) != 1L ||
+          min_size != as.integer(min_size) || min_size < 1L)
+        stop("[predictomics] engineering_params$ssgsea_min_size must be a ",
+             "positive integer.", call. = FALSE)
+
+      max_size <- params$ssgsea_max_size %||% Inf
+      if (!is.numeric(max_size) || length(max_size) != 1L ||
+          max_size < min_size)
+        stop("[predictomics] engineering_params$ssgsea_max_size must be a ",
+             "numeric value >= ssgsea_min_size.", call. = FALSE)
+
+      normalize <- params$ssgsea_normalize %||% TRUE
+      if (!is.logical(normalize) || length(normalize) != 1L)
+        stop("[predictomics] engineering_params$ssgsea_normalize must be ",
+             "TRUE or FALSE.", call. = FALSE)
+    }
   }
 
   invisible(NULL)

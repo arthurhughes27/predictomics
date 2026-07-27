@@ -1,0 +1,113 @@
+# -----------------------------------------------------------------------------
+# ssgsea aggregation
+# -----------------------------------------------------------------------------
+
+.make_ssgsea_data <- function(n = 20, p = 10, seed = 1) {
+  set.seed(seed)
+  X <- matrix(rexp(n * p, rate = 1), nrow = n, ncol = p)
+  colnames(X) <- paste0("gene", seq_len(p))
+  rownames(X) <- paste0("sample", seq_len(n))
+  genesets <- list(
+    setA = paste0("gene", 1:5),
+    setB = paste0("gene", 6:10)
+  )
+  list(X = X, genesets = genesets)
+}
+
+test_that("engineering_params$agg_method = 'ssgsea' is a valid option", {
+  d <- .make_ssgsea_data()
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "ssgsea")
+  expect_error(.validate_engineering_params(params), NA)
+})
+
+test_that("ssgsea-specific params are validated", {
+  d <- .make_ssgsea_data()
+
+  expect_error(
+    .validate_engineering_params(list(
+      method = "engineer", genesets = d$genesets, agg_method = "ssgsea",
+      ssgsea_alpha = -1
+    )),
+    "ssgsea_alpha"
+  )
+
+  expect_error(
+    .validate_engineering_params(list(
+      method = "engineer", genesets = d$genesets, agg_method = "ssgsea",
+      ssgsea_min_size = 0
+    )),
+    "ssgsea_min_size"
+  )
+
+  expect_error(
+    .validate_engineering_params(list(
+      method = "engineer", genesets = d$genesets, agg_method = "ssgsea",
+      ssgsea_max_size = 1, ssgsea_min_size = 5
+    )),
+    "ssgsea_max_size"
+  )
+
+  expect_error(
+    .validate_engineering_params(list(
+      method = "engineer", genesets = d$genesets, agg_method = "ssgsea",
+      ssgsea_normalize = "yes"
+    )),
+    "ssgsea_normalize"
+  )
+})
+
+test_that("run_engineering computes ssgsea scores with correct shape and names", {
+  testthat::skip_if_not_installed("GSVA")
+  d <- .make_ssgsea_data()
+
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "ssgsea")
+  fit <- run_engineering(X_train = d$X, params = params)
+
+  expect_equal(dim(fit$X_transformed), c(nrow(d$X), length(d$genesets)))
+  expect_equal(colnames(fit$X_transformed), names(d$genesets))
+  expect_equal(rownames(fit$X_transformed), rownames(d$X))
+})
+
+test_that("predict_engineering recomputes ssgsea scores on new data", {
+  testthat::skip_if_not_installed("GSVA")
+  d <- .make_ssgsea_data(n = 20, seed = 1)
+  d_test <- .make_ssgsea_data(n = 8, seed = 2)
+
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "ssgsea")
+  fit <- run_engineering(X_train = d$X, params = params)
+
+  X_test_transformed <- predict_engineering(fit$fit, X_new = d_test$X)
+
+  expect_equal(dim(X_test_transformed), c(nrow(d_test$X), length(d$genesets)))
+  expect_equal(colnames(X_test_transformed), names(d$genesets))
+})
+
+test_that("ssgsea errors informatively when a geneset has no overlapping features", {
+  testthat::skip_if_not_installed("GSVA")
+  d <- .make_ssgsea_data()
+  genesets <- d$genesets
+  genesets$setC <- c("not_a_gene1", "not_a_gene2")
+
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = genesets, agg_method = "ssgsea")
+
+  expect_error(
+    run_engineering(X_train = d$X, params = params),
+    "setC"
+  )
+})
+
+test_that("using col_transform = 'z' with agg_method = 'ssgsea' warns", {
+  testthat::skip_if_not_installed("GSVA")
+  d <- .make_ssgsea_data()
+  params <- list(method = "engineer", col_transform = "z",
+                 genesets = d$genesets, agg_method = "ssgsea")
+
+  expect_warning(
+    run_engineering(X_train = d$X, params = params),
+    "col_transform"
+  )
+})

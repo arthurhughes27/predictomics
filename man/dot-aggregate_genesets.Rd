@@ -11,7 +11,11 @@
   feature_names,
   is_train,
   pc1_loadings,
-  col_transform
+  col_transform,
+  ssgsea_alpha = 0.25,
+  ssgsea_min_size = 1L,
+  ssgsea_max_size = Inf,
+  ssgsea_normalize = TRUE
 )
 }
 \arguments{
@@ -19,15 +23,21 @@
 
 \item{genesets}{Named list of character vectors of feature names.}
 
-\item{agg_method}{Character string. One of "mean", "median", "sum", "pc1".}
+\item{agg_method}{Character string. One of "mean", "median", "sum", "pc1",
+"ssgsea".}
 
 \item{feature_names}{Character vector of column names of \code{X}.}
 
 \item{is_train}{Logical. If \code{TRUE}, PC1 loadings are fitted from
-\code{X}. If \code{FALSE}, \code{pc1_loadings} must be supplied.}
+\code{X}. If \code{FALSE}, \code{pc1_loadings} must be supplied. Ignored
+for \code{agg_method = "ssgsea"}, which is recomputed from \code{X}
+regardless.}
 
 \item{pc1_loadings}{Named list of PC1 loading vectors (one per geneset),
 or \code{NULL} when \code{is_train = TRUE}.}
+
+\item{ssgsea_alpha, ssgsea_min_size, ssgsea_max_size, ssgsea_normalize}{ssGSEA tuning parameters, only used when \code{agg_method = "ssgsea"}.
+See \code{\link{run_engineering}}.}
 }
 \value{
 Numeric matrix of aggregated features (samples x genesets), with

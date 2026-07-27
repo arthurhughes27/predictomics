@@ -8,11 +8,12 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0
-Suggests: 
+Suggests:
     testthat (>= 3.0.0),
     SurrogateRank,
     future,
-    kernlab
+    kernlab,
+    GSVA
 Config/testthat/edition: 3
 Imports:
     caret, ggplot2, future.apply, scales, tidyr

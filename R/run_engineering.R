@@ -46,6 +46,19 @@
 #'   \item \code{"pc1"}: first principal component of the geneset members,
 #'     computed by PCA on the training samples. The feature loadings are stored
 #'     and applied to the test set via \code{\link{predict_engineering}}.
+#'   \item \code{"ssgsea"}: single-sample Gene Set Enrichment Analysis scores,
+#'     computed via \code{GSVA::gsva()} with \code{GSVA::ssgseaParam()}
+#'     (requires the Suggested \pkg{GSVA} package). Unlike the other
+#'     aggregation methods, ssGSEA scores are recomputed independently on
+#'     whatever matrix is passed to \code{run_engineering}/
+#'     \code{predict_engineering} (there are no training-derived parameters to
+#'     store, since the enrichment statistic is computed per sample). See
+#'     \code{ssgsea_alpha}, \code{ssgsea_min_size}, \code{ssgsea_max_size}, and
+#'     \code{ssgsea_normalize} below for tuning options. Because ssGSEA relies
+#'     on the within-sample ranking of genes, \code{col_transform = "z"}
+#'     (which rescales each gene/column differently) alters that ranking and
+#'     is discouraged in combination with \code{agg_method = "ssgsea"}; a
+#'     warning is issued if both are used together.
 #' }
 #' If \code{genesets = NULL}, Step 2 is skipped and the output of Step 1 is
 #' returned directly.
@@ -67,8 +80,20 @@
 #'       geneset aggregation.}
 #'     \item{\code{agg_method}}{Character string. Aggregation method to apply
 #'       within each geneset. One of \code{"mean"}, \code{"median"},
-#'       \code{"sum"}, or \code{"pc1"}. Required when \code{genesets} is not
-#'       \code{NULL}.}
+#'       \code{"sum"}, \code{"pc1"}, or \code{"ssgsea"}. Required when
+#'       \code{genesets} is not \code{NULL}.}
+#'     \item{\code{ssgsea_alpha}}{Numeric. The exponent weight applied to the
+#'       running-sum statistic in ssGSEA. Defaults to \code{0.25}. Only used
+#'       when \code{agg_method = "ssgsea"}.}
+#'     \item{\code{ssgsea_min_size}}{Positive integer. Minimum geneset size
+#'       (after intersecting with the features present in \code{X_train})
+#'       required for a geneset to be scored. Defaults to \code{1}. Only used
+#'       when \code{agg_method = "ssgsea"}.}
+#'     \item{\code{ssgsea_max_size}}{Numeric. Maximum geneset size allowed.
+#'       Defaults to \code{Inf}. Only used when \code{agg_method = "ssgsea"}.}
+#'     \item{\code{ssgsea_normalize}}{Logical. Whether to apply the Barbie et
+#'       al. (2009) normalisation of ssGSEA scores. Defaults to \code{TRUE}.
+#'       Only used when \code{agg_method = "ssgsea"}.}
 #'   }
 #'
 #' @return A named list with two elements:
@@ -81,8 +106,10 @@
 #'       the same transformations to a test matrix via
 #'       \code{\link{predict_engineering}}. Contains:
 #'       \code{col_transform}, \code{col_means}, \code{col_sds} (for z-score),
-#'       \code{genesets}, \code{agg_method}, and \code{pc1_loadings} (for
-#'       pc1 aggregation).}
+#'       \code{genesets}, \code{agg_method}, \code{pc1_loadings} (for pc1
+#'       aggregation), and \code{ssgsea_alpha}, \code{ssgsea_min_size},
+#'       \code{ssgsea_max_size}, \code{ssgsea_normalize} (for ssgsea
+#'       aggregation).}
 #'   }
 #'
 #' @seealso \code{\link{predict_engineering}}, \code{\link{predict_cv}}
@@ -125,9 +152,22 @@ run_engineering <- function(X_train, params) {
          call. = FALSE)
   }
 
-  col_transform <- params$col_transform %||% "none"
-  genesets      <- params$genesets
-  agg_method    <- params$agg_method
+  col_transform    <- params$col_transform %||% "none"
+  genesets         <- params$genesets
+  agg_method       <- params$agg_method
+  ssgsea_alpha     <- params$ssgsea_alpha     %||% 0.25
+  ssgsea_min_size  <- params$ssgsea_min_size  %||% 1L
+  ssgsea_max_size  <- params$ssgsea_max_size  %||% Inf
+  ssgsea_normalize <- params$ssgsea_normalize %||% TRUE
+
+  if (identical(agg_method, "ssgsea") && identical(col_transform, "z"))
+    warning(
+      "[predictomics] col_transform = 'z' rescales each feature/column ",
+      "differently, which alters each sample's within-sample gene ranking ",
+      "and therefore the ssGSEA enrichment scores. Consider ",
+      "col_transform = 'none' when agg_method = 'ssgsea'.",
+      call. = FALSE
+    )
 
   # ---------------------------------------------------------------------------
   # 2. Step 1 - Column-wise transformation
@@ -168,13 +208,17 @@ run_engineering <- function(X_train, params) {
     feature_names <- colnames(X_out)
 
     X_out <- .aggregate_genesets(
-      X             = X_out,
-      genesets      = genesets,
-      agg_method    = agg_method,
-      feature_names = feature_names,
-      is_train      = TRUE,
-      pc1_loadings  = NULL,
-      col_transform = col_transform
+      X                = X_out,
+      genesets         = genesets,
+      agg_method       = agg_method,
+      feature_names    = feature_names,
+      is_train         = TRUE,
+      pc1_loadings     = NULL,
+      col_transform    = col_transform,
+      ssgsea_alpha     = ssgsea_alpha,
+      ssgsea_min_size  = ssgsea_min_size,
+      ssgsea_max_size  = ssgsea_max_size,
+      ssgsea_normalize = ssgsea_normalize
     )
 
     pc1_loadings <- attr(X_out, "pc1_loadings")
@@ -185,12 +229,16 @@ run_engineering <- function(X_train, params) {
   # 4. Assemble and return
   # ---------------------------------------------------------------------------
   fit <- list(
-    col_transform = col_transform,
-    col_means     = col_means,
-    col_sds       = col_sds,
-    genesets      = genesets,
-    agg_method    = agg_method,
-    pc1_loadings  = pc1_loadings
+    col_transform    = col_transform,
+    col_means        = col_means,
+    col_sds          = col_sds,
+    genesets         = genesets,
+    agg_method       = agg_method,
+    pc1_loadings     = pc1_loadings,
+    ssgsea_alpha     = ssgsea_alpha,
+    ssgsea_min_size  = ssgsea_min_size,
+    ssgsea_max_size  = ssgsea_max_size,
+    ssgsea_normalize = ssgsea_normalize
   )
 
   list(X_transformed = X_out, fit = fit)
@@ -244,13 +292,17 @@ predict_engineering <- function(fit, X_new) {
   # ---------------------------------------------------------------------------
   if (!is.null(fit$genesets)) {
     X_out <- .aggregate_genesets(
-      X             = X_out,
-      genesets      = fit$genesets,
-      agg_method    = fit$agg_method,
-      feature_names = colnames(X_out),
-      is_train      = FALSE,
-      pc1_loadings  = fit$pc1_loadings,
-      col_transform = fit$col_transform
+      X                = X_out,
+      genesets         = fit$genesets,
+      agg_method       = fit$agg_method,
+      feature_names    = colnames(X_out),
+      is_train         = FALSE,
+      pc1_loadings     = fit$pc1_loadings,
+      col_transform    = fit$col_transform,
+      ssgsea_alpha     = fit$ssgsea_alpha,
+      ssgsea_min_size  = fit$ssgsea_min_size,
+      ssgsea_max_size  = fit$ssgsea_max_size,
+      ssgsea_normalize = fit$ssgsea_normalize
     )
   }
 
@@ -274,12 +326,18 @@ predict_engineering <- function(fit, X_new) {
 #'
 #' @param X Numeric matrix post column-wise transformation.
 #' @param genesets Named list of character vectors of feature names.
-#' @param agg_method Character string. One of "mean", "median", "sum", "pc1".
+#' @param agg_method Character string. One of "mean", "median", "sum", "pc1",
+#'   "ssgsea".
 #' @param feature_names Character vector of column names of \code{X}.
 #' @param is_train Logical. If \code{TRUE}, PC1 loadings are fitted from
-#'   \code{X}. If \code{FALSE}, \code{pc1_loadings} must be supplied.
+#'   \code{X}. If \code{FALSE}, \code{pc1_loadings} must be supplied. Ignored
+#'   for \code{agg_method = "ssgsea"}, which is recomputed from \code{X}
+#'   regardless.
 #' @param pc1_loadings Named list of PC1 loading vectors (one per geneset),
 #'   or \code{NULL} when \code{is_train = TRUE}.
+#' @param ssgsea_alpha,ssgsea_min_size,ssgsea_max_size,ssgsea_normalize
+#'   ssGSEA tuning parameters, only used when \code{agg_method = "ssgsea"}.
+#'   See \code{\link{run_engineering}}.
 #'
 #' @return Numeric matrix of aggregated features (samples x genesets), with
 #'   PC1 loadings attached as an attribute when \code{is_train = TRUE} and
@@ -288,7 +346,20 @@ predict_engineering <- function(fit, X_new) {
 #' @keywords internal
 # -----------------------------------------------------------------------------
 .aggregate_genesets <- function(X, genesets, agg_method, feature_names,
-                                is_train, pc1_loadings, col_transform) {
+                                is_train, pc1_loadings, col_transform,
+                                ssgsea_alpha = 0.25, ssgsea_min_size = 1L,
+                                ssgsea_max_size = Inf, ssgsea_normalize = TRUE) {
+
+  if (agg_method == "ssgsea") {
+    return(.compute_ssgsea(
+      X         = X,
+      genesets  = genesets,
+      alpha     = ssgsea_alpha,
+      min_size  = ssgsea_min_size,
+      max_size  = ssgsea_max_size,
+      normalize = ssgsea_normalize
+    ))
+  }
 
   n_sets       <- length(genesets)
   n_samples    <- nrow(X)
@@ -335,6 +406,74 @@ predict_engineering <- function(fit, X_new) {
 
   if (!is.null(pc1_loadings_out))
     attr(X_agg, "pc1_loadings") <- pc1_loadings_out
+
+  X_agg
+}
+
+
+# -----------------------------------------------------------------------------
+#' Compute single-sample GSEA (ssGSEA) enrichment scores
+#'
+#' @description
+#' Internal workhorse for \code{agg_method = "ssgsea"}, called by
+#' \code{\link{.aggregate_genesets}}. Computes ssGSEA scores via
+#' \code{GSVA::gsva()}/\code{GSVA::ssgseaParam()}. Unlike the other
+#' aggregation methods, ssGSEA scores are computed independently on whatever
+#' matrix is supplied (there are no training-derived parameters that can be
+#' stored and reapplied, since the enrichment statistic is computed per
+#' sample from that sample's own gene ranking).
+#'
+#' @param X Numeric matrix of dimensions n (samples) x p (features), post
+#'   column-wise transformation.
+#' @param genesets Named list of character vectors of feature names.
+#' @param alpha Numeric. Exponent weight for the running-sum statistic.
+#' @param min_size Positive integer. Minimum geneset size (after intersecting
+#'   with \code{colnames(X)}) required for a geneset to be scored.
+#' @param max_size Numeric. Maximum geneset size allowed.
+#' @param normalize Logical. Whether to apply the Barbie et al. (2009)
+#'   normalisation of ssGSEA scores.
+#'
+#' @return Numeric matrix of ssGSEA scores (samples x genesets), in the same
+#'   geneset order as \code{genesets}.
+#'
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.compute_ssgsea <- function(X, genesets, alpha, min_size, max_size, normalize) {
+
+  if (!requireNamespace("GSVA", quietly = TRUE))
+    stop(
+      "[predictomics] Package 'GSVA' is required for agg_method = 'ssgsea'. ",
+      "Please install it (e.g. via BiocManager::install('GSVA')).",
+      call. = FALSE
+    )
+
+  feature_names     <- colnames(X)
+  genesets_filtered <- lapply(genesets, intersect, y = feature_names)
+
+  empty <- vapply(genesets_filtered, length, integer(1)) == 0L
+  if (any(empty))
+    stop(
+      "[predictomics] The following geneset(s) have no overlapping features ",
+      "with X and cannot be scored via ssgsea: ",
+      paste(names(genesets_filtered)[empty], collapse = ", "), ".",
+      call. = FALSE
+    )
+
+  expr <- t(X)  # genes (features) x samples
+
+  par <- GSVA::ssgseaParam(
+    exprData  = expr,
+    geneSets  = genesets_filtered,
+    minSize   = min_size,
+    maxSize   = max_size,
+    alpha     = alpha,
+    normalize = normalize
+  )
+
+  scores <- GSVA::gsva(par)
+  X_agg  <- t(scores)
+  X_agg  <- X_agg[, names(genesets_filtered), drop = FALSE]
+  rownames(X_agg) <- rownames(X)
 
   X_agg
 }

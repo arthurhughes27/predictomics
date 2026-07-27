@@ -25,8 +25,20 @@ present in any geneset are discarded. Pass \code{NULL} to skip
 geneset aggregation.}
 \item{\code{agg_method}}{Character string. Aggregation method to apply
 within each geneset. One of \code{"mean"}, \code{"median"},
-\code{"sum"}, or \code{"pc1"}. Required when \code{genesets} is not
-\code{NULL}.}
+\code{"sum"}, \code{"pc1"}, or \code{"ssgsea"}. Required when
+\code{genesets} is not \code{NULL}.}
+\item{\code{ssgsea_alpha}}{Numeric. The exponent weight applied to the
+running-sum statistic in ssGSEA. Defaults to \code{0.25}. Only used
+when \code{agg_method = "ssgsea"}.}
+\item{\code{ssgsea_min_size}}{Positive integer. Minimum geneset size
+(after intersecting with the features present in \code{X_train})
+required for a geneset to be scored. Defaults to \code{1}. Only used
+when \code{agg_method = "ssgsea"}.}
+\item{\code{ssgsea_max_size}}{Numeric. Maximum geneset size allowed.
+Defaults to \code{Inf}. Only used when \code{agg_method = "ssgsea"}.}
+\item{\code{ssgsea_normalize}}{Logical. Whether to apply the Barbie et
+al. (2009) normalisation of ssGSEA scores. Defaults to \code{TRUE}.
+Only used when \code{agg_method = "ssgsea"}.}
 }}
 }
 \value{
@@ -40,8 +52,10 @@ columns correspond to genesets; otherwise columns correspond to the
 the same transformations to a test matrix via
 \code{\link{predict_engineering}}. Contains:
 \code{col_transform}, \code{col_means}, \code{col_sds} (for z-score),
-\code{genesets}, \code{agg_method}, and \code{pc1_loadings} (for
-pc1 aggregation).}
+\code{genesets}, \code{agg_method}, \code{pc1_loadings} (for pc1
+aggregation), and \code{ssgsea_alpha}, \code{ssgsea_min_size},
+\code{ssgsea_max_size}, \code{ssgsea_normalize} (for ssgsea
+aggregation).}
 }
 }
 \description{
@@ -74,6 +88,19 @@ transformed) output of Step 1. Supported aggregation methods:
 \item \code{"pc1"}: first principal component of the geneset members,
 computed by PCA on the training samples. The feature loadings are stored
 and applied to the test set via \code{\link{predict_engineering}}.
+\item \code{"ssgsea"}: single-sample Gene Set Enrichment Analysis scores,
+computed via \code{GSVA::gsva()} with \code{GSVA::ssgseaParam()}
+(requires the Suggested \pkg{GSVA} package). Unlike the other
+aggregation methods, ssGSEA scores are recomputed independently on
+whatever matrix is passed to \code{run_engineering}/
+\code{predict_engineering} (there are no training-derived parameters to
+store, since the enrichment statistic is computed per sample). See
+\code{ssgsea_alpha}, \code{ssgsea_min_size}, \code{ssgsea_max_size}, and
+\code{ssgsea_normalize} below for tuning options. Because ssGSEA relies
+on the within-sample ranking of genes, \code{col_transform = "z"}
+(which rescales each gene/column differently) alters that ranking and
+is discouraged in combination with \code{agg_method = "ssgsea"}; a
+warning is issued if both are used together.
 }
 If \code{genesets = NULL}, Step 2 is skipped and the output of Step 1 is
 returned directly.
