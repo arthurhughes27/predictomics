@@ -6,7 +6,7 @@
 \usage{
 predict_cv(
   Y,
-  X,
+  X = NULL,
   cv_type = "kfold",
   folds = 10L,
   seed = 12345L,
@@ -26,7 +26,13 @@ predict_cv(
 \item{Y}{Numeric vector of length n. The response variable to be predicted.}
 
 \item{X}{Numeric matrix of dimensions n (samples) x p (features).
-The predictor matrix. Column names should be feature identifiers.}
+The predictor matrix. Column names should be feature identifiers. Pass
+\code{NULL} (default) to fit a \strong{baseline model} instead: only
+\code{covariates} (and \code{treatment}, if \code{treatment_predictor =
+TRUE}) are used as predictors, or, if none of those are supplied either,
+the model simply predicts the training-fold mean of \code{Y}. When
+\code{X = NULL}, \code{engineering_params} and \code{selection_params}
+must also be \code{NULL}, since they operate on gene-level features.}
 
 \item{cv_type}{Character string. Type of cross-validation. One of
 \code{"kfold"} (K-fold CV) or \code{"loo"} (leave-one-out CV).
@@ -117,7 +123,9 @@ supplied.}
 \item{\code{n_folds}}{Integer. Number of folds used.}
 \item{\code{n_samples}}{Integer. Number of samples.}
 \item{\code{n_features_input}}{Integer. Number of features in the input
-\code{X}.}
+\code{X}. \code{0} if \code{X = NULL} (baseline model).}
+\item{\code{baseline_model}}{Logical. Whether a baseline model
+(\code{X = NULL}) was fit.}
 \item{\code{dearseq_selection}}{A list containing
 \code{selected_features} (gene names for
 \code{dearseq_level = "gene"}; \strong{geneset} names for
@@ -215,6 +223,17 @@ treatment, immediately before model fitting. Covariates are never passed
 through engineering or selection. Covariate column names must not clash with
 feature names in \code{X} or treatment column names.
 
+If \code{X = NULL}, a \strong{baseline model} is fit instead of the usual
+gene-expression pipeline: engineering and selection are skipped entirely
+(both \code{engineering_params} and \code{selection_params} must be
+\code{NULL}), and each fold's model is fit using only \code{covariates}
+and/or \code{treatment} (if \code{treatment_predictor = TRUE}) as
+predictors. If neither is available either, the "model" is simply the
+training-fold mean of \code{Y}, predicted for every held-out sample - no
+call to \code{\link{run_model}} is made in that case. An informative
+message is printed (when \code{verbose = TRUE}) indicating that a
+baseline model is being used, and whether it has any predictors at all.
+
 \strong{Parallelisation}: the outer CV loop is parallelised via
 \code{future.apply::future_lapply}. To enable parallel execution, set a
 \code{future} plan before calling \code{predict_cv}:
@@ -255,6 +274,13 @@ result <- predict_cv(Y = Y, X = X, treatment = treatment,
 covariates <- data.frame(age = rnorm(n), sex = factor(sample(c("M","F"), n,
                          replace = TRUE)))
 result <- predict_cv(Y = Y, X = X, covariates = covariates)
+
+# Baseline model: X = NULL, predicting from covariates alone
+result <- predict_cv(Y = Y, X = NULL, covariates = covariates)
+
+# Null baseline model: X = NULL and no covariates - predicts the
+# training-fold mean of Y
+result <- predict_cv(Y = Y, X = NULL)
 }
 
 }

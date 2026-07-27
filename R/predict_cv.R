@@ -77,6 +77,17 @@
 #' through engineering or selection. Covariate column names must not clash with
 #' feature names in \code{X} or treatment column names.
 #'
+#' If \code{X = NULL}, a **baseline model** is fit instead of the usual
+#' gene-expression pipeline: engineering and selection are skipped entirely
+#' (both \code{engineering_params} and \code{selection_params} must be
+#' \code{NULL}), and each fold's model is fit using only \code{covariates}
+#' and/or \code{treatment} (if \code{treatment_predictor = TRUE}) as
+#' predictors. If neither is available either, the "model" is simply the
+#' training-fold mean of \code{Y}, predicted for every held-out sample - no
+#' call to \code{\link{run_model}} is made in that case. An informative
+#' message is printed (when \code{verbose = TRUE}) indicating that a
+#' baseline model is being used, and whether it has any predictors at all.
+#'
 #' **Parallelisation**: the outer CV loop is parallelised via
 #' \code{future.apply::future_lapply}. To enable parallel execution, set a
 #' \code{future} plan before calling \code{predict_cv}:
@@ -92,7 +103,13 @@
 #'
 #' @param Y Numeric vector of length n. The response variable to be predicted.
 #' @param X Numeric matrix of dimensions n (samples) x p (features).
-#'   The predictor matrix. Column names should be feature identifiers.
+#'   The predictor matrix. Column names should be feature identifiers. Pass
+#'   \code{NULL} (default) to fit a \strong{baseline model} instead: only
+#'   \code{covariates} (and \code{treatment}, if \code{treatment_predictor =
+#'   TRUE}) are used as predictors, or, if none of those are supplied either,
+#'   the model simply predicts the training-fold mean of \code{Y}. When
+#'   \code{X = NULL}, \code{engineering_params} and \code{selection_params}
+#'   must also be \code{NULL}, since they operate on gene-level features.
 #' @param cv_type Character string. Type of cross-validation. One of
 #'   \code{"kfold"} (K-fold CV) or \code{"loo"} (leave-one-out CV).
 #'   Defaults to \code{"kfold"}.
@@ -169,7 +186,9 @@
 #'     \item{\code{n_folds}}{Integer. Number of folds used.}
 #'     \item{\code{n_samples}}{Integer. Number of samples.}
 #'     \item{\code{n_features_input}}{Integer. Number of features in the input
-#'       \code{X}.}
+#'       \code{X}. \code{0} if \code{X = NULL} (baseline model).}
+#'     \item{\code{baseline_model}}{Logical. Whether a baseline model
+#'       (\code{X = NULL}) was fit.}
 #'     \item{\code{dearseq_selection}}{A list containing
 #'       \code{selected_features} (gene names for
 #'       \code{dearseq_level = "gene"}; \strong{geneset} names for
@@ -233,12 +252,19 @@
 #' covariates <- data.frame(age = rnorm(n), sex = factor(sample(c("M","F"), n,
 #'                          replace = TRUE)))
 #' result <- predict_cv(Y = Y, X = X, covariates = covariates)
+#'
+#' # Baseline model: X = NULL, predicting from covariates alone
+#' result <- predict_cv(Y = Y, X = NULL, covariates = covariates)
+#'
+#' # Null baseline model: X = NULL and no covariates - predicts the
+#' # training-fold mean of Y
+#' result <- predict_cv(Y = Y, X = NULL)
 #' }
 #'
 #' @export
 # -----------------------------------------------------------------------------
 predict_cv <- function(Y,
-                       X,
+                       X                   = NULL,
                        cv_type             = "kfold",
                        folds               = 10L,
                        seed                = 12345L,
@@ -259,12 +285,15 @@ predict_cv <- function(Y,
   # 1. Input validation
   # ---------------------------------------------------------------------------
   n <- length(Y)
-  p <- ncol(X)
+  is_baseline_model <- is.null(X)
+  p <- if (is_baseline_model) 0L else ncol(X)
   folds <- if (cv_type == "loo") n else folds
 
   .validate_Y(Y)
-  .validate_X(X)
-  .validate_Y_X_compat(Y, X)
+  if (!is_baseline_model) {
+    .validate_X(X)
+    .validate_Y_X_compat(Y, X)
+  }
   .validate_scalar_args(cv_type = cv_type, folds = folds, n = n,
                         seed = seed, outside_cv = outside_cv,
                         verbose = verbose,
@@ -274,6 +303,44 @@ predict_cv <- function(Y,
   .validate_params_list(params = engineering_params, arg_name = "engineering_params")
   .validate_params_list(params = selection_params,   arg_name = "selection_params")
   .validate_params_list(params = model_params,       arg_name = "model_params")
+
+  # ---------------------------------------------------------------------------
+  # 1a-baseline. X = NULL: fit a baseline model using only covariates/treatment
+  # (or, if neither is available, the training-fold mean of Y). Gene-level
+  # engineering/selection require X and are therefore disallowed here.
+  # ---------------------------------------------------------------------------
+  if (is_baseline_model) {
+
+    if (!is.null(engineering_params) || !is.null(selection_params))
+      stop(
+        "[predictomics] X = NULL (baseline model) is not compatible with ",
+        "engineering_params or selection_params, since these operate on ",
+        "gene-level features. Set both to NULL (the default) to fit a ",
+        "baseline model.",
+        call. = FALSE
+      )
+
+    X <- matrix(nrow = n, ncol = 0)
+
+    baseline_has_predictors <- !is.null(covariates) ||
+      (!is.null(treatment) && treatment_predictor)
+
+    if (verbose) {
+      if (baseline_has_predictors) {
+        message(
+          "[predictomics] X = NULL: fitting a baseline model using only ",
+          "covariates and/or treatment as predictors (no gene-level ",
+          "features)."
+        )
+      } else {
+        message(
+          "[predictomics] X = NULL, with no covariates and no treatment ",
+          "predictor: fitting a null baseline model that simply predicts ",
+          "the training-fold mean of Y."
+        )
+      }
+    }
+  }
 
   # ---------------------------------------------------------------------------
   # 1a. Detect gene-level fold-change (gene_level_fc) engineering
@@ -670,6 +737,7 @@ predict_cv <- function(Y,
       n_samples_total                     = length(Y_full),
       paired_rise                         = is_paired_rise,
       n_features_input                    = p,
+      baseline_model                      = is_baseline_model,
       dearseq_selection                   = dearseq_selection,
       fold_selection_diagnostics          = fold_selection_diagnostics,
       outside_cv_selection                = outside_cv_selection,
