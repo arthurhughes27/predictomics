@@ -2,7 +2,10 @@
 
 S3method(metrics,predictomics)
 S3method(plot,predictomics)
+S3method(plot,predictomics_comparison)
 S3method(print,predictomics)
+S3method(print,predictomics_comparison)
+export(compare_pipelines)
 export(make_folds)
 export(metrics)
 export(plot_selection_stability)
