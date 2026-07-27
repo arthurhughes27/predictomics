@@ -192,7 +192,10 @@ the \code{"classic"}/\code{"paired"} modes, the \code{"gene"}/
 combined with \code{engineering_params$genesets}, since gene-level DEA
 filtering typically leaves most genesets with no surviving member genes;
 use \code{dearseq_level = "geneset"} instead if geneset-level engineering
-is required downstream.
+is required downstream. With \code{dearseq_level = "geneset"}, any
+geneset in \code{engineering_params$genesets} left with no surviving
+genes after the dearseq filter is automatically dropped before
+engineering runs (with a message, if \code{verbose = TRUE}).
 
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and

@@ -305,6 +305,32 @@ test_that("predict_cv allows dearseq_level = 'geneset' combined with engineering
   )
 })
 
+test_that("predict_cv drops engineering genesets with no surviving genes after geneset-level dearseq filtering", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+
+  msgs <- testthat::capture_messages(
+    result <- predict_cv(
+      Y = d$Y, X = d$X,
+      folds = 2,
+      selection_params   = list(method = "dearseq", dearseq_mode = "classic",
+                                dearseq_level = "geneset", genesets = d$genesets,
+                                top_n = 1),
+      engineering_params = list(method = "engineer", genesets = d$genesets,
+                                agg_method = "mean"),
+      treatment = d$treatment,
+      verbose   = TRUE
+    )
+  )
+
+  # top_n = 1 with two disjoint, equal-sized genesets guarantees exactly one
+  # geneset (4 genes) survives, leaving the other with zero overlap in X;
+  # predict_cv must drop it automatically rather than erroring downstream.
+  expect_true(any(grepl("Removed 1 geneset", msgs)))
+  expect_equal(result$dearseq_selection$n_selected, 4)
+  expect_false(is.null(result$predicted))
+})
+
 test_that("predict_cv applies dearseq upfront, before gene_level_fc, regardless of outside_cv", {
   testthat::skip_if_not_installed("dearseq")
   d <- .make_dearseq_data()
