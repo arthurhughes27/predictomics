@@ -25,8 +25,8 @@ present in any geneset are discarded. Pass \code{NULL} to skip
 geneset aggregation.}
 \item{\code{agg_method}}{Character string. Aggregation method to apply
 within each geneset. One of \code{"mean"}, \code{"median"},
-\code{"sum"}, \code{"pc1"}, or \code{"ssgsea"}. Required when
-\code{genesets} is not \code{NULL}.}
+\code{"sum"}, \code{"pc1"}, \code{"ssgsea"}, or \code{"gsva"}.
+Required when \code{genesets} is not \code{NULL}.}
 \item{\code{ssgsea_alpha}}{Numeric. The exponent weight applied to the
 running-sum statistic in ssGSEA. Defaults to \code{0.25}. Only used
 when \code{agg_method = "ssgsea"}.}
@@ -39,6 +39,26 @@ Defaults to \code{Inf}. Only used when \code{agg_method = "ssgsea"}.}
 \item{\code{ssgsea_normalize}}{Logical. Whether to apply the Barbie et
 al. (2009) normalisation of ssGSEA scores. Defaults to \code{TRUE}.
 Only used when \code{agg_method = "ssgsea"}.}
+\item{\code{gsva_kcdf}}{Character string. Kernel used to estimate the
+cumulative distribution function for each gene. One of
+\code{"Gaussian"} (default), \code{"Poisson"}, or \code{"none"}.
+Only used when \code{agg_method = "gsva"}.}
+\item{\code{gsva_tau}}{Numeric. Exponent weight for the random walk
+statistic. Defaults to \code{1}. Only used when
+\code{agg_method = "gsva"}.}
+\item{\code{gsva_max_diff}}{Logical. If \code{TRUE} (default), the GSVA
+score is the difference between the largest positive and negative
+random walk deviations; if \code{FALSE}, the largest absolute
+deviation is used. Only used when \code{agg_method = "gsva"}.}
+\item{\code{gsva_abs_ranking}}{Logical. Whether to use absolute gene
+expression ranking (ignoring the sign of gene-level changes).
+Defaults to \code{FALSE}. Only used when \code{agg_method = "gsva"}.}
+\item{\code{gsva_min_size}}{Positive integer. Minimum geneset size
+(after intersecting with the features present in \code{X_train})
+required for a geneset to be scored. Defaults to \code{1}. Only used
+when \code{agg_method = "gsva"}.}
+\item{\code{gsva_max_size}}{Numeric. Maximum geneset size allowed.
+Defaults to \code{Inf}. Only used when \code{agg_method = "gsva"}.}
 }}
 }
 \value{
@@ -53,9 +73,11 @@ the same transformations to a test matrix via
 \code{\link{predict_engineering}}. Contains:
 \code{col_transform}, \code{col_means}, \code{col_sds} (for z-score),
 \code{genesets}, \code{agg_method}, \code{pc1_loadings} (for pc1
-aggregation), and \code{ssgsea_alpha}, \code{ssgsea_min_size},
+aggregation), \code{ssgsea_alpha}, \code{ssgsea_min_size},
 \code{ssgsea_max_size}, \code{ssgsea_normalize} (for ssgsea
-aggregation).}
+aggregation), and \code{gsva_kcdf}, \code{gsva_tau},
+\code{gsva_max_diff}, \code{gsva_abs_ranking}, \code{gsva_min_size},
+\code{gsva_max_size} (for gsva aggregation).}
 }
 }
 \description{
@@ -101,6 +123,16 @@ on the within-sample ranking of genes, \code{col_transform = "z"}
 (which rescales each gene/column differently) alters that ranking and
 is discouraged in combination with \code{agg_method = "ssgsea"}; a
 warning is issued if both are used together.
+\item \code{"gsva"}: Gene Set Variation Analysis scores, computed via
+\code{GSVA::gsva()} with \code{GSVA::gsvaParam()} (requires the
+Suggested \pkg{GSVA} package). As with ssGSEA, scores are recomputed
+independently on whatever matrix is passed to \code{run_engineering}/
+\code{predict_engineering}, since GSVA estimates a kernel density (or
+Poisson) distribution per gene across the samples supplied in a single
+call and has no linear training-derived parameters to store. See
+\code{gsva_kcdf}, \code{gsva_tau}, \code{gsva_max_diff},
+\code{gsva_abs_ranking}, \code{gsva_min_size}, and \code{gsva_max_size}
+below for tuning options.
 }
 If \code{genesets = NULL}, Step 2 is skipped and the output of Step 1 is
 returned directly.
