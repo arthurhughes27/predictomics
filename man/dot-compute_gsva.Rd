@@ -4,7 +4,16 @@
 \alias{.compute_gsva}
 \title{Compute Gene Set Variation Analysis (GSVA) scores}
 \usage{
-.compute_gsva(X, genesets, kcdf, tau, max_diff, abs_ranking, min_size, max_size)
+.compute_gsva(
+  X,
+  genesets,
+  kcdf,
+  tau,
+  max_diff,
+  abs_ranking,
+  min_size,
+  max_size
+)
 }
 \arguments{
 \item{X}{Numeric matrix of dimensions n (samples) x p (features), post

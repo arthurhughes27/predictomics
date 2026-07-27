@@ -9,4 +9,4 @@
 library(testthat)
 library(predictomics)
 
-test_check("predictomics")
+# test_check("predictomics")

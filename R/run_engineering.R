@@ -589,8 +589,7 @@ predict_engineering <- function(fit, X_new) {
     maxDiff    = max_diff,
     absRanking = abs_ranking
   )
-
-  scores <- GSVA::gsva(par)
+  scores <- suppressMessages(GSVA::gsva(par))
   X_agg  <- t(scores)
   X_agg  <- X_agg[, names(genesets_filtered), drop = FALSE]
   rownames(X_agg) <- rownames(X)
