@@ -33,12 +33,12 @@ the reference pipeline and all \code{K} options. Passed to
 \code{X = NULL} internally regardless of this argument).}
 
 \item{option_type}{Character string. Which pipeline stage varies across
-\code{option_choices}. One of \code{"filtration"}, \code{"engineering"},
+\code{option_choices}. One of \code{"selection"}, \code{"engineering"},
 or \code{"model"}.}
 
 \item{option_choices}{A list of \code{K} parameter lists, one per
 alternative pipeline. Each element has the same structure as
-\code{selection_params} (\code{option_type = "filtration"}),
+\code{selection_params} (\code{option_type = "selection"}),
 \code{engineering_params} (\code{"engineering"}), or \code{model_params}
 (\code{"model"}) in \code{\link{predict_cv}}. May be named to control
 the labels used in the returned results and plot; see Details.}
@@ -85,7 +85,7 @@ containing:
 \description{
 Fits a baseline model (\code{X = NULL}), a user-specified reference
 pipeline, and a set of alternative pipelines that vary exactly one
-pipeline stage (feature filtration, feature engineering, or model choice)
+pipeline stage (feature selection, feature engineering, or model choice)
 relative to the reference, then compares their cross-validated
 performance. Each pipeline is fit via a single sequential call to
 \code{\link{predict_cv}}; the \code{K} alternative pipelines are always
@@ -98,14 +98,14 @@ Exactly one of \code{engineering_params}, \code{selection_params}, or
 \code{model_params} varies across the \code{K} alternative pipelines,
 selected by \code{option_type}:
 \itemize{
-  \item \code{"filtration"}: each element of \code{option_choices}
+  \item \code{"selection"}: each element of \code{option_choices}
     replaces \code{reference_params$selection_params}; engineering and
     model choice are held fixed at their reference values.
   \item \code{"engineering"}: each element of \code{option_choices}
-    replaces \code{reference_params$engineering_params}; filtration and
+    replaces \code{reference_params$engineering_params}; selection and
     model choice are held fixed.
   \item \code{"model"}: each element of \code{option_choices} replaces
-    \code{reference_params$model_params}; filtration and engineering are
+    \code{reference_params$model_params}; selection and engineering are
     held fixed.
 }
 \code{option_choices} should not include a configuration identical to the
@@ -126,7 +126,7 @@ data restricted to \code{timepoint == 1} rows before fitting. This
 matches the one-row-per-individual structure produced by
 \code{gene_level_fc}, so that all pipelines are compared on the same
 number of observations and CV folds are of comparable size. This
-restriction is not applied when comparing \code{"filtration"} or
+restriction is not applied when comparing \code{"selection"} or
 \code{"model"} options (\code{gene_level_fc} cannot appear as a choice
 there) and does not attempt to reconcile with
 \code{selection_params$dearseq_mode = "paired"}, which operates upstream
@@ -141,7 +141,7 @@ pipelines are still attempted.
 \strong{Same-class option labelling}: when \code{option_choices} is unnamed,
 or contains blank/duplicate names, labels are generated from each choice's
 \code{method} element. If multiple choices share the same method (e.g.
-two \code{"spearman"} filtrations at different thresholds), they are
+two \code{"spearman"} selections at different thresholds), they are
 distinguished by appending \code{"_1"}, \code{"_2"}, etc, in the order
 supplied. User-supplied names are always preferred where present, unique,
 and non-blank.
@@ -156,7 +156,7 @@ Y <- X[, 1] * 2 + rnorm(n)
 
 cmp <- compare_pipelines(
   Y = Y, X = X,
-  option_type    = "filtration",
+  option_type    = "selection",
   option_choices = list(
     list(method = "pearson",  top_n = 20),
     list(method = "spearman", top_n = 20),

@@ -12,7 +12,7 @@
 #' @description
 #' Fits a baseline model (\code{X = NULL}), a user-specified reference
 #' pipeline, and a set of alternative pipelines that vary exactly one
-#' pipeline stage (feature filtration, feature engineering, or model choice)
+#' pipeline stage (feature selection, feature engineering, or model choice)
 #' relative to the reference, then compares their cross-validated
 #' performance. Each pipeline is fit via a single sequential call to
 #' \code{\link{predict_cv}}; the \code{K} alternative pipelines are always
@@ -25,14 +25,14 @@
 #' \code{model_params} varies across the \code{K} alternative pipelines,
 #' selected by \code{option_type}:
 #' \itemize{
-#'   \item \code{"filtration"}: each element of \code{option_choices}
+#'   \item \code{"selection"}: each element of \code{option_choices}
 #'     replaces \code{reference_params$selection_params}; engineering and
 #'     model choice are held fixed at their reference values.
 #'   \item \code{"engineering"}: each element of \code{option_choices}
-#'     replaces \code{reference_params$engineering_params}; filtration and
+#'     replaces \code{reference_params$engineering_params}; selection and
 #'     model choice are held fixed.
 #'   \item \code{"model"}: each element of \code{option_choices} replaces
-#'     \code{reference_params$model_params}; filtration and engineering are
+#'     \code{reference_params$model_params}; selection and engineering are
 #'     held fixed.
 #' }
 #' \code{option_choices} should not include a configuration identical to the
@@ -53,7 +53,7 @@
 #' matches the one-row-per-individual structure produced by
 #' \code{gene_level_fc}, so that all pipelines are compared on the same
 #' number of observations and CV folds are of comparable size. This
-#' restriction is not applied when comparing \code{"filtration"} or
+#' restriction is not applied when comparing \code{"selection"} or
 #' \code{"model"} options (\code{gene_level_fc} cannot appear as a choice
 #' there) and does not attempt to reconcile with
 #' \code{selection_params$dearseq_mode = "paired"}, which operates upstream
@@ -68,7 +68,7 @@
 #' **Same-class option labelling**: when \code{option_choices} is unnamed,
 #' or contains blank/duplicate names, labels are generated from each choice's
 #' \code{method} element. If multiple choices share the same method (e.g.
-#' two \code{"spearman"} filtrations at different thresholds), they are
+#' two \code{"spearman"} selections at different thresholds), they are
 #' distinguished by appending \code{"_1"}, \code{"_2"}, etc, in the order
 #' supplied. User-supplied names are always preferred where present, unique,
 #' and non-blank.
@@ -79,11 +79,11 @@
 #'   \code{\link{predict_cv}} unchanged (the baseline model always uses
 #'   \code{X = NULL} internally regardless of this argument).
 #' @param option_type Character string. Which pipeline stage varies across
-#'   \code{option_choices}. One of \code{"filtration"}, \code{"engineering"},
+#'   \code{option_choices}. One of \code{"selection"}, \code{"engineering"},
 #'   or \code{"model"}.
 #' @param option_choices A list of \code{K} parameter lists, one per
 #'   alternative pipeline. Each element has the same structure as
-#'   \code{selection_params} (\code{option_type = "filtration"}),
+#'   \code{selection_params} (\code{option_type = "selection"}),
 #'   \code{engineering_params} (\code{"engineering"}), or \code{model_params}
 #'   (\code{"model"}) in \code{\link{predict_cv}}. May be named to control
 #'   the labels used in the returned results and plot; see Details.
@@ -137,7 +137,7 @@
 #'
 #' cmp <- compare_pipelines(
 #'   Y = Y, X = X,
-#'   option_type    = "filtration",
+#'   option_type    = "selection",
 #'   option_choices = list(
 #'     list(method = "pearson",  top_n = 20),
 #'     list(method = "spearman", top_n = 20),
@@ -180,8 +180,8 @@ compare_pipelines <- function(Y,
   # ---------------------------------------------------------------------------
   # 1. Validate
   # ---------------------------------------------------------------------------
-  if (!option_type %in% c("filtration", "engineering", "model"))
-    stop("[predictomics] option_type must be one of 'filtration', ",
+  if (!option_type %in% c("selection", "engineering", "model"))
+    stop("[predictomics] option_type must be one of 'selection', ",
          "'engineering', or 'model'.", call. = FALSE)
 
   if (!is.list(option_choices) || length(option_choices) == 0L)
@@ -252,7 +252,7 @@ compare_pipelines <- function(Y,
     lbl <- option_labels[i]
     specs[[lbl]] <- switch(
       option_type,
-      filtration = list(
+      selection = list(
         role               = "option",
         engineering_params = ref_engineering,
         selection_params   = option_choices[[i]],
@@ -382,6 +382,29 @@ compare_pipelines <- function(Y,
 # -----------------------------------------------------------------------------
 .uses_gene_level_fc <- function(engineering_params) {
   isTRUE(engineering_params$gene_level_fc)
+}
+
+
+# -----------------------------------------------------------------------------
+#' Human-readable label for an option_type value
+#'
+#' @description
+#' Maps \code{option_type} to the phrase used in
+#' \code{\link{plot.predictomics_comparison}}'s title and
+#' \code{\link{print.predictomics_comparison}}'s summary.
+#'
+#' @param option_type Character string. One of \code{"selection"},
+#'   \code{"engineering"}, or \code{"model"}.
+#' @return A character string.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.option_type_label <- function(option_type) {
+  switch(
+    option_type,
+    selection   = "feature selection",
+    engineering = "engineering",
+    model       = "model choice"
+  )
 }
 
 
@@ -553,8 +576,10 @@ print.predictomics_comparison <- function(x, digits = 4, ...) {
 #' @param metric Character string. Which metric to plot. One of
 #'   \code{"RMSE"}, \code{"sRMSE"}, \code{"R2"}, \code{"SpearmanR"}, or
 #'   \code{"all"} (facet over all four). Defaults to \code{x$metric}.
-#' @param sort Logical. If \code{TRUE} (default), pipelines are ordered by
-#'   the plotted metric (or by \code{x$metric} when \code{metric = "all"}).
+#' @param sort Logical. If \code{TRUE}, pipelines are ordered by the plotted
+#'   metric (or by \code{x$metric} when \code{metric = "all"}). Defaults to
+#'   \code{FALSE}, keeping the order in which pipelines were supplied
+#'   (Baseline, Reference, then the \code{K} options in order).
 #' @param ... Additional arguments passed to \code{ggplot2::theme}.
 #'
 #' @return A \code{ggplot} object.
@@ -566,7 +591,7 @@ print.predictomics_comparison <- function(x, digits = 4, ...) {
 # -----------------------------------------------------------------------------
 plot.predictomics_comparison <- function(x,
                                          metric = x$metric,
-                                         sort   = TRUE,
+                                         sort   = FALSE,
                                          ...) {
 
   if (!inherits(x, "predictomics_comparison"))
@@ -590,7 +615,9 @@ plot.predictomics_comparison <- function(x,
     res$pipeline <- factor(res$pipeline, levels = res$pipeline)
   }
 
-  baseline_row <- res[res$role == "Baseline", , drop = FALSE]
+  baseline_row  <- res[res$role == "Baseline", , drop = FALSE]
+  option_label  <- .option_type_label(x$option_type)
+  title_text    <- paste0("Pipeline comparison: ", option_label)
 
   if (metric == "all") {
 
@@ -620,10 +647,8 @@ plot.predictomics_comparison <- function(x,
       ) +
       ggplot2::facet_wrap(~metric, scales = "free_y") +
       ggplot2::labs(
-        x        = NULL, y = NULL, fill = NULL,
-        title    = "Pipeline comparison",
-        subtitle = paste0("Option type: ", x$option_type,
-                          "  |  dashed line = Baseline")
+        x        = "Pipeline specification", y = NULL, fill = NULL,
+        title    = title_text
       )
 
   } else {
@@ -643,11 +668,9 @@ plot.predictomics_comparison <- function(x,
         vjust = -0.4, size = 3, colour = "grey20"
       ) +
       ggplot2::labs(
-        x        = NULL, y = metric, fill = NULL,
-        title    = "Pipeline comparison",
-        subtitle = paste0("Option type: ", x$option_type,
-                          "  |  metric: ", metric,
-                          "  |  dashed line = Baseline")
+        x        = "Pipeline specification", y = metric, fill = NULL,
+        title    = title_text,
+        subtitle = paste0("metric: ", metric)
       )
   }
 
