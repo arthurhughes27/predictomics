@@ -516,7 +516,7 @@ predict_engineering <- function(fit, X_new) {
 .compute_ssgsea <- function(X, genesets, alpha, min_size, max_size, normalize) {
 
   .require_gsva("ssgsea")
-  genesets_filtered <- .filter_genesets_for_gsva(X, genesets, "ssgsea")
+  genesets_filtered <- .filter_genesets_to_available_features(X, genesets, "ssgsea")
 
   expr <- t(X)  # genes (features) x samples
 
@@ -575,7 +575,7 @@ predict_engineering <- function(fit, X_new) {
                           min_size, max_size) {
 
   .require_gsva("gsva")
-  genesets_filtered <- .filter_genesets_for_gsva(X, genesets, "gsva")
+  genesets_filtered <- .filter_genesets_to_available_features(X, genesets, "gsva")
 
   expr <- t(X)  # genes (features) x samples
 
@@ -629,20 +629,21 @@ predict_engineering <- function(fit, X_new) {
 #' Intersect genesets with available features and check for empty overlaps
 #'
 #' @description
-#' Internal helper called by \code{\link{.compute_ssgsea}} and
-#' \code{\link{.compute_gsva}}. Restricts each geneset to the features
-#' present in \code{X} and stops with an informative error if any geneset has
-#' no overlapping features.
+#' Internal helper called by \code{\link{.compute_ssgsea}},
+#' \code{\link{.compute_gsva}}, and the dearseq geneset-level scoring
+#' functions. Restricts each geneset to the features present in \code{X} and
+#' stops with an informative error if any geneset has no overlapping
+#' features.
 #'
 #' @param X Numeric matrix with feature names as column names.
 #' @param genesets Named list of character vectors of feature names.
-#' @param agg_method Character string naming the aggregation method, used in
-#'   the error message.
+#' @param label Character string naming the calling method, used in the
+#'   error message.
 #' @return Named list of character vectors, one per geneset, restricted to
 #'   features present in \code{X}.
 #' @keywords internal
 # -----------------------------------------------------------------------------
-.filter_genesets_for_gsva <- function(X, genesets, agg_method) {
+.filter_genesets_to_available_features <- function(X, genesets, label) {
 
   feature_names     <- colnames(X)
   genesets_filtered <- lapply(genesets, intersect, y = feature_names)
@@ -651,7 +652,7 @@ predict_engineering <- function(fit, X_new) {
   if (any(empty))
     stop(
       "[predictomics] The following geneset(s) have no overlapping features ",
-      "with X and cannot be scored via ", agg_method, ": ",
+      "with X and cannot be scored via ", label, ": ",
       paste(names(genesets_filtered)[empty], collapse = ", "), ".",
       call. = FALSE
     )

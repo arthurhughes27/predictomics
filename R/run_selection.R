@@ -49,26 +49,35 @@
 #'     predictions are computed once per inner fold. Supported metrics:
 #'     \code{"rmse"}, \code{"srmse"}, \code{"r2"}, \code{"spearman"}.
 #'   \item \code{"dearseq"}: features are ranked by adjusted p-value from a
-#'     \code{dearseq::dear_seq()} differential expression analysis (requires
-#'     the Suggested \pkg{dearseq} package). Two modes are supported, chosen
-#'     via \code{dearseq_mode}:
+#'     dearseq differential expression analysis (requires the Suggested
+#'     \pkg{dearseq} package). Two independent choices control the analysis:
 #'     \itemize{
-#'       \item \code{"classic"} (default): compares \code{treatment == 1} vs
-#'         \code{treatment == 0} (\code{treatment} required). If
+#'       \item \code{dearseq_mode} chooses \emph{which comparison} is run:
+#'         \code{"classic"} (default) compares \code{treatment == 1} vs
+#'         \code{treatment == 0} (\code{treatment} required); if
 #'         \code{individual_id} and \code{timepoint} are also supplied,
 #'         \code{X_train} is first restricted to \code{timepoint == 1} rows
-#'         before the comparison is run.
-#'       \item \code{"paired"}: compares \code{timepoint == 1} vs
-#'         \code{timepoint == 0} (\code{individual_id} and \code{timepoint}
-#'         required, with every individual having exactly one observation at
-#'         each timepoint), with \code{sample_group = individual_id}. If
-#'         \code{treatment} is also supplied, \code{X_train} is first
-#'         restricted to \code{treatment == 1} rows before the comparison is
-#'         run.
+#'         before the comparison is run. \code{"paired"} compares
+#'         \code{timepoint == 1} vs \code{timepoint == 0}
+#'         (\code{individual_id} and \code{timepoint} required, with every
+#'         individual having exactly one observation at each timepoint),
+#'         with \code{sample_group = individual_id}; if \code{treatment} is
+#'         also supplied, \code{X_train} is first restricted to
+#'         \code{treatment == 1} rows before the comparison is run.
+#'       \item \code{dearseq_level} chooses \emph{what is tested}:
+#'         \code{"gene"} (default) calls \code{dearseq::dear_seq()} and
+#'         scores every column of \code{X_train} individually. \code{"geneset"}
+#'         calls \code{dearseq::dgsa_seq()} with \code{genesets} instead, and
+#'         scores each geneset as a unit; the selected genesets (by
+#'         \code{top_n}/\code{threshold} on their adjusted p-values) are then
+#'         resolved to the union of their member genes (restricted to
+#'         columns of \code{X_train}) for \code{selected_features}, while
+#'         \code{selection_scores} remains indexed by geneset name.
 #'     }
-#'     In both cases, adjusted p-values are computed only from the (possibly
-#'     row-restricted) comparison, but apply to \emph{all} columns of
-#'     \code{X_train} (no columns are dropped before scoring).
+#'     In all cases, only \emph{rows} are ever restricted before the
+#'     comparison; adjusted p-values are computed from the (possibly
+#'     row-restricted) comparison but scoring always considers every gene
+#'     (or geneset) supplied.
 #' }
 #'
 #' All scores are computed on \code{X_train} only. The selected feature names
@@ -142,6 +151,11 @@
 #'       \code{paired}. Defaults to \code{FALSE}.}
 #'     \item{\code{dearseq_mode}}{Character string. One of \code{"classic"}
 #'       (default) or \code{"paired"}. See Details.}
+#'     \item{\code{dearseq_level}}{Character string. One of \code{"gene"}
+#'       (default) or \code{"geneset"}. See Details.}
+#'     \item{\code{genesets}}{Named list of character vectors of feature
+#'       names, in the same form as \code{engineering_params$genesets}.
+#'       Required when \code{dearseq_level = "geneset"}; ignored otherwise.}
 #'     \item{\code{dearseq_which_test}}{Character string. Passed to
 #'       \code{dear_seq()} as \code{which_test}. One of \code{"asymptotic"}
 #'       (default) or \code{"permutation"}.}
@@ -174,11 +188,16 @@
 #' @return A named list containing:
 #'   \describe{
 #'     \item{\code{selected_features}}{Character vector of selected column
-#'       names, in decreasing order of score.}
+#'       names, in decreasing order of score. For \code{"dearseq"} with
+#'       \code{dearseq_level = "geneset"}, this is the union of member genes
+#'       of the selected genesets (restricted to \code{colnames(X_train)}),
+#'       not geneset names.}
 #'     \item{\code{selection_method}}{Character string. The method used.}
 #'     \item{\code{selection_scores}}{Named numeric vector of scores for
 #'       \emph{all} features, in decreasing order. For
-#'       \code{"relative_gain"}, scores are the gain values.}
+#'       \code{"relative_gain"}, scores are the gain values. For
+#'       \code{"dearseq"} with \code{dearseq_level = "geneset"}, this is
+#'       indexed by geneset name (not gene name).}
 #'     \item{\code{top_n}}{Integer or \code{NULL}. The \code{top_n} value
 #'       used after resolving precedence with \code{threshold}.}
 #'     \item{\code{threshold}}{Numeric or \code{NULL}. The \code{threshold}
@@ -347,21 +366,40 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                    },
 
                    dearseq = {
-                     .compute_dearseq_scores(
-                       X_train         = X_train,
-                       covariates      = covariates,
-                       treatment       = treatment,
-                       individual_id   = individual_id,
-                       timepoint       = timepoint,
-                       dearseq_mode    = params$dearseq_mode          %||% "classic",
-                       which_test      = params$dearseq_which_test    %||% "asymptotic",
-                       preprocessed    = params$dearseq_preprocessed  %||% TRUE,
-                       padjust_methods = params$dearseq_padjust_methods %||% "BH",
-                       which_weights   = params$dearseq_which_weights %||% "loclin",
-                       n_perm          = params$dearseq_n_perm        %||% 1000L,
-                       bw              = params$dearseq_bw            %||% "nrd",
-                       kernel          = params$dearseq_kernel        %||% "gaussian"
-                     )
+                     if ((params$dearseq_level %||% "gene") == "geneset") {
+                       .compute_dearseq_geneset_scores(
+                         X_train         = X_train,
+                         covariates      = covariates,
+                         treatment       = treatment,
+                         individual_id   = individual_id,
+                         timepoint       = timepoint,
+                         dearseq_mode    = params$dearseq_mode          %||% "classic",
+                         genesets        = params$genesets,
+                         which_test      = params$dearseq_which_test    %||% "asymptotic",
+                         preprocessed    = params$dearseq_preprocessed  %||% TRUE,
+                         padjust_methods = params$dearseq_padjust_methods %||% "BH",
+                         which_weights   = params$dearseq_which_weights %||% "loclin",
+                         n_perm          = params$dearseq_n_perm        %||% 1000L,
+                         bw              = params$dearseq_bw            %||% "nrd",
+                         kernel          = params$dearseq_kernel        %||% "gaussian"
+                       )
+                     } else {
+                       .compute_dearseq_scores(
+                         X_train         = X_train,
+                         covariates      = covariates,
+                         treatment       = treatment,
+                         individual_id   = individual_id,
+                         timepoint       = timepoint,
+                         dearseq_mode    = params$dearseq_mode          %||% "classic",
+                         which_test      = params$dearseq_which_test    %||% "asymptotic",
+                         preprocessed    = params$dearseq_preprocessed  %||% TRUE,
+                         padjust_methods = params$dearseq_padjust_methods %||% "BH",
+                         which_weights   = params$dearseq_which_weights %||% "loclin",
+                         n_perm          = params$dearseq_n_perm        %||% 1000L,
+                         bw              = params$dearseq_bw            %||% "nrd",
+                         kernel          = params$dearseq_kernel        %||% "gaussian"
+                       )
+                     }
                    }
   )
 
@@ -372,9 +410,14 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   }
 
   # ---------------------------------------------------------------------------
-  # 3. Select features
+  # 3. Select features (or, for dearseq geneset-level, genesets - resolved to
+  # gene names below)
   # ---------------------------------------------------------------------------
-  selected_features <- if (!is.null(top_n)) {
+  is_dearseq_geneset <- identical(method, "dearseq") &&
+    identical(params$dearseq_level %||% "gene", "geneset")
+  unit <- if (is_dearseq_geneset) "geneset" else "feature"
+
+  selected_labels <- if (!is.null(top_n)) {
 
     if (method == "relative_gain" && any(scores[seq_len(top_n)] < 0)) {
 
@@ -404,7 +447,7 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
       sel <- names(scores)[scores <= threshold]
 
       if (length(sel) == 0L)
-        stop("[predictomics] No features pass the '", method, "' p-value ",
+        stop("[predictomics] No ", unit, "s pass the '", method, "' p-value ",
              "threshold (", threshold, "). Consider raising the threshold or ",
              "using top_n instead.", call. = FALSE)
 
@@ -423,6 +466,16 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
       sel
 
     }
+  }
+
+  # For dearseq geneset-level, selected_labels are geneset names - resolve to
+  # the union of their member genes (restricted to columns of X_train) so
+  # that predict_cv()/run_fold() can subset X as usual.
+  selected_features <- if (is_dearseq_geneset) {
+    genes <- unique(unlist(params$genesets[selected_labels]))
+    intersect(genes, colnames(X_train))
+  } else {
+    selected_labels
   }
 
   # ---------------------------------------------------------------------------
@@ -768,38 +821,15 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                                     which_test, preprocessed, padjust_methods,
                                     which_weights, n_perm, bw, kernel) {
 
-  treatment_bin <- if (!is.null(treatment)) .coerce_treatment_binary(treatment)
-  else NULL
+  g <- .resolve_dearseq_groups(X_train, treatment, individual_id, timepoint,
+                              dearseq_mode)
 
-  if (dearseq_mode == "classic") {
-
-    keep <- if (!is.null(individual_id))
-      which(timepoint == 1)
-    else
-      seq_len(nrow(X_train))
-
-    group_var    <- treatment_bin[keep]
-    group_name   <- "treatment"
-    sample_group <- NULL
-
-  } else {
-
-    keep <- if (!is.null(treatment_bin))
-      which(treatment_bin == 1)
-    else
-      seq_len(nrow(X_train))
-
-    group_var    <- timepoint[keep]
-    group_name   <- "timepoint"
-    sample_group <- individual_id[keep]
-  }
-
-  X_sub   <- X_train[keep, , drop = FALSE]
-  cov_sub <- if (!is.null(covariates)) covariates[keep, , drop = FALSE] else NULL
+  X_sub   <- X_train[g$keep, , drop = FALSE]
+  cov_sub <- if (!is.null(covariates)) covariates[g$keep, , drop = FALSE] else NULL
 
   exprmat <- t(X_sub)
-  variables2test <- matrix(group_var, ncol = 1L,
-                           dimnames = list(NULL, group_name))
+  variables2test <- matrix(g$group_var, ncol = 1L,
+                           dimnames = list(NULL, g$group_name))
   covariates_design <- .build_dearseq_covariates(cov_sub)
 
   res <- suppressMessages(
@@ -807,7 +837,7 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
       exprmat         = exprmat,
       covariates      = covariates_design,
       variables2test  = variables2test,
-      sample_group    = sample_group,
+      sample_group    = g$sample_group,
       which_test      = which_test,
       preprocessed    = preprocessed,
       padjust_methods = padjust_methods,
@@ -822,4 +852,140 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   names(adj_pval) <- rownames(exprmat)
 
   adj_pval[colnames(X_train)]
+}
+
+
+# -----------------------------------------------------------------------------
+#' Compute dearseq geneset-level adjusted p-value scores for feature selection
+#'
+#' @description
+#' Calls \code{dearseq::dgsa_seq()} to test genesets (rather than individual
+#' genes) for differential expression across a binary grouping variable, in
+#' the same \code{"classic"}/\code{"paired"} row-restriction modes as
+#' \code{\link{.compute_dearseq_scores}}. Returns adjusted p-values indexed
+#' by geneset name (not gene name); \code{\link{run_selection}} resolves
+#' selected genesets back to their member gene names.
+#'
+#' @param X_train Numeric matrix. Training predictor matrix (samples x
+#'   features).
+#' @param covariates Numeric matrix or data frame, or \code{NULL}. Passed to
+#'   \code{dgsa_seq()} as a full design matrix (with intercept) via
+#'   \code{\link{.build_dearseq_covariates}}.
+#' @param treatment Binary numeric vector (0/1), factor, or \code{NULL}.
+#' @param individual_id Vector identifying individuals, or \code{NULL}.
+#' @param timepoint Binary numeric vector (0/1), or \code{NULL}.
+#' @param dearseq_mode Character string. One of \code{"classic"} or
+#'   \code{"paired"}.
+#' @param genesets Named list of character vectors of feature names.
+#' @param which_test,preprocessed,padjust_methods,which_weights,n_perm,bw,kernel
+#'   Arguments passed directly to \code{dearseq::dgsa_seq()}.
+#'
+#' @return Named numeric vector of adjusted p-values, one per geneset, in
+#'   \code{names(genesets)} order (restricted to genesets with at least one
+#'   feature present in \code{X_train}).
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.compute_dearseq_geneset_scores <- function(X_train, covariates, treatment,
+                                            individual_id, timepoint,
+                                            dearseq_mode, genesets, which_test,
+                                            preprocessed, padjust_methods,
+                                            which_weights, n_perm, bw, kernel) {
+
+  g <- .resolve_dearseq_groups(X_train, treatment, individual_id, timepoint,
+                              dearseq_mode)
+
+  X_sub   <- X_train[g$keep, , drop = FALSE]
+  cov_sub <- if (!is.null(covariates)) covariates[g$keep, , drop = FALSE] else NULL
+
+  genesets_filtered <- .filter_genesets_to_available_features(
+    X_sub, genesets, "dearseq (geneset-level)"
+  )
+
+  exprmat <- t(X_sub)
+  variables2test <- matrix(g$group_var, ncol = 1L,
+                           dimnames = list(NULL, g$group_name))
+  covariates_design <- .build_dearseq_covariates(cov_sub)
+
+  res <- suppressMessages(
+    dearseq::dgsa_seq(
+      exprmat         = exprmat,
+      covariates      = covariates_design,
+      variables2test  = variables2test,
+      genesets        = genesets_filtered,
+      sample_group    = g$sample_group,
+      which_test      = which_test,
+      preprocessed    = preprocessed,
+      padjust_methods = padjust_methods,
+      which_weights   = which_weights,
+      n_perm          = n_perm,
+      bw              = bw,
+      kernel          = kernel
+    )
+  )
+
+  adj_pval <- res[["pvals"]]$adjPval
+  names(adj_pval) <- names(genesets_filtered)
+
+  adj_pval
+}
+
+
+# -----------------------------------------------------------------------------
+#' Resolve the grouping variable, sample_group, and row subset for dearseq
+#'
+#' @description
+#' Shared row-restriction logic for \code{\link{.compute_dearseq_scores}} and
+#' \code{\link{.compute_dearseq_geneset_scores}}. For \code{"classic"} mode,
+#' restricts to \code{timepoint == 1} rows when \code{individual_id} is
+#' supplied and returns \code{treatment} as the grouping variable. For
+#' \code{"paired"} mode, restricts to \code{treatment == 1} rows when
+#' \code{treatment} is supplied and returns \code{timepoint} as the grouping
+#' variable with \code{individual_id} as \code{sample_group}.
+#'
+#' @param X_train Numeric matrix. Training predictor matrix.
+#' @param treatment Binary numeric vector (0/1), factor, or \code{NULL}.
+#' @param individual_id Vector identifying individuals, or \code{NULL}.
+#' @param timepoint Binary numeric vector (0/1), or \code{NULL}.
+#' @param dearseq_mode Character string. One of \code{"classic"} or
+#'   \code{"paired"}.
+#'
+#' @return A named list with \code{keep} (integer row indices), \code{group_var}
+#'   (numeric grouping vector), \code{group_name} (character), and
+#'   \code{sample_group} (vector or \code{NULL}).
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.resolve_dearseq_groups <- function(X_train, treatment, individual_id,
+                                    timepoint, dearseq_mode) {
+
+  treatment_bin <- if (!is.null(treatment)) .coerce_treatment_binary(treatment)
+  else NULL
+
+  if (dearseq_mode == "classic") {
+
+    keep <- if (!is.null(individual_id))
+      which(timepoint == 1)
+    else
+      seq_len(nrow(X_train))
+
+    list(
+      keep         = keep,
+      group_var    = treatment_bin[keep],
+      group_name   = "treatment",
+      sample_group = NULL
+    )
+
+  } else {
+
+    keep <- if (!is.null(treatment_bin))
+      which(treatment_bin == 1)
+    else
+      seq_len(nrow(X_train))
+
+    list(
+      keep         = keep,
+      group_var    = timepoint[keep],
+      group_name   = "timepoint",
+      sample_group = individual_id[keep]
+    )
+  }
 }
