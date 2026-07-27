@@ -119,11 +119,15 @@ supplied.}
 \item{\code{n_features_input}}{Integer. Number of features in the input
 \code{X}.}
 \item{\code{dearseq_selection}}{A list containing
-\code{selected_features} (gene names, even when
-\code{dearseq_level = "geneset"}), \code{selection_scores} (adjusted
-p-values - per gene for \code{dearseq_level = "gene"}, per geneset
-for \code{dearseq_level = "geneset"}), \code{dearseq_mode},
-\code{dearseq_level}, and \code{n_selected} from the upfront
+\code{selected_features} (gene names for
+\code{dearseq_level = "gene"}; \strong{geneset} names for
+\code{dearseq_level = "geneset"} - \code{X} itself is still
+filtered by the resolved member genes of those genesets),
+\code{selection_scores} (adjusted p-values - per gene for
+\code{dearseq_level = "gene"}, per geneset for
+\code{dearseq_level = "geneset"}), \code{dearseq_mode},
+\code{dearseq_level}, and \code{n_selected} (number of genes or
+genesets selected, matching \code{dearseq_level}) from the upfront
 dearseq filter. \code{NULL} if
 \code{selection_params$method != "dearseq"}.}
 \item{\code{fold_selection_diagnostics}}{A list of length
