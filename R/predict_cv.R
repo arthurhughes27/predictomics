@@ -27,7 +27,7 @@
 #' **This will produce optimistically biased performance estimates and is
 #' encouraged to be used for exploratory analysis only.**
 #'
-#' If \code{engineering_params$method = "gene_level_fc"} is specified,
+#' If \code{engineering_params$gene_level_fc = TRUE} is specified,
 #' \code{individual_id} and \code{timepoint} must also be supplied. Every
 #' individual must have exactly two observations, one at
 #' \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
@@ -104,13 +104,13 @@
 #'   \code{model.matrix}. Pass \code{NULL} (default) for no covariates.
 #' @param individual_id A vector of length n identifying which individual each
 #'   sample (row of \code{X}) belongs to. Required when
-#'   \code{engineering_params$method = "gene_level_fc"} is used, in which case
+#'   \code{engineering_params$gene_level_fc = TRUE} is used, in which case
 #'   every individual must have exactly two observations: one at
 #'   \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
 #'   (post-treatment). Pass \code{NULL} (default) otherwise.
 #' @param timepoint A binary numeric vector of length n (0 = pre-treatment,
 #'   1 = post-treatment), paired with \code{individual_id}. Required when
-#'   \code{engineering_params$method = "gene_level_fc"} is used. Pass
+#'   \code{engineering_params$gene_level_fc = TRUE} is used. Pass
 #'   \code{NULL} (default) otherwise.
 #' @param verbose Logical. If \code{TRUE}, prints progress messages throughout.
 #'   Defaults to \code{TRUE}.
@@ -239,7 +239,7 @@ predict_cv <- function(Y,
   # 1a. Detect gene-level fold-change (gene_level_fc) engineering
   # ---------------------------------------------------------------------------
   is_gene_level_fc <- !is.null(engineering_params) &&
-    isTRUE(engineering_params$method == "gene_level_fc")
+    isTRUE(engineering_params$gene_level_fc)
 
   # treatment_pipeline/covariates_pipeline are used for all downstream
   # computation; treatment/covariates are left untouched so that the returned
@@ -256,7 +256,7 @@ predict_cv <- function(Y,
 
   if (is_gene_level_fc && is_paired_rise) {
     stop(
-      "[predictomics] engineering_params$method = 'gene_level_fc' is not ",
+      "[predictomics] engineering_params$gene_level_fc = TRUE is not ",
       "compatible with selection_params$rise_paired = TRUE. Set ",
       "rise_paired = FALSE (or omit it) to use gene_level_fc.",
       call. = FALSE

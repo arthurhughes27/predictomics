@@ -22,6 +22,6 @@ Checks that \code{individual_id} and \code{timepoint} are supplied, have
 the correct length and type, and that every individual has exactly two
 observations, one at each timepoint (0 = pre-treatment, 1 =
 post-treatment). Called from \code{predict_cv} when
-\code{engineering_params$method = "gene_level_fc"} is detected.
+\code{engineering_params$gene_level_fc = TRUE} is detected.
 }
 \keyword{internal}

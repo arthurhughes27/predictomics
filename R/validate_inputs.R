@@ -434,7 +434,7 @@
 #' the correct length and type, and that every individual has exactly two
 #' observations, one at each timepoint (0 = pre-treatment, 1 =
 #' post-treatment). Called from \code{predict_cv} when
-#' \code{engineering_params$method = "gene_level_fc"} is detected.
+#' \code{engineering_params$gene_level_fc = TRUE} is detected.
 #'
 #' @param individual_id Vector of length n identifying individuals, or
 #'   \code{NULL}.
@@ -447,7 +447,7 @@
 
   if (is.null(individual_id) || is.null(timepoint))
     stop(
-      "[predictomics] engineering_params$method = 'gene_level_fc' requires ",
+      "[predictomics] engineering_params$gene_level_fc = TRUE requires ",
       "both 'individual_id' and 'timepoint' to be supplied to predict_cv().",
       call. = FALSE
     )

@@ -23,7 +23,7 @@ test_that("gene_level_fc collapses paired rows into post - pre fold changes", {
   result <- predict_cv(
     Y = d$Y, X = d$X,
     folds = 2, cv_type = "kfold",
-    engineering_params = list(method = "gene_level_fc"),
+    engineering_params = list(method = "engineer", gene_level_fc = TRUE),
     individual_id = d$individual_id,
     timepoint = d$timepoint,
     verbose = FALSE
@@ -52,7 +52,7 @@ test_that("gene_level_fc errors when individual_id/timepoint missing", {
   expect_error(
     predict_cv(
       Y = d$Y, X = d$X,
-      engineering_params = list(method = "gene_level_fc"),
+      engineering_params = list(method = "engineer", gene_level_fc = TRUE),
       verbose = FALSE
     ),
     "individual_id"
@@ -67,7 +67,7 @@ test_that("gene_level_fc errors when an individual lacks exactly two observation
   expect_error(
     predict_cv(
       Y = d$Y, X = d$X,
-      engineering_params = list(method = "gene_level_fc"),
+      engineering_params = list(method = "engineer", gene_level_fc = TRUE),
       individual_id = individual_id,
       timepoint = d$timepoint,
       verbose = FALSE
@@ -84,7 +84,7 @@ test_that("gene_level_fc errors when an individual has two obs at the same timep
   expect_error(
     predict_cv(
       Y = d$Y, X = d$X,
-      engineering_params = list(method = "gene_level_fc"),
+      engineering_params = list(method = "engineer", gene_level_fc = TRUE),
       individual_id = d$individual_id,
       timepoint = timepoint,
       verbose = FALSE
@@ -99,7 +99,7 @@ test_that("gene_level_fc is incompatible with rise_paired = TRUE", {
   expect_error(
     predict_cv(
       Y = d$Y, X = d$X,
-      engineering_params = list(method = "gene_level_fc"),
+      engineering_params = list(method = "engineer", gene_level_fc = TRUE),
       selection_params   = list(method = "rise", rise_paired = TRUE,
                                 rise_epsilon = 0.1),
       individual_id = d$individual_id,
@@ -118,7 +118,7 @@ test_that("gene_level_fc allowed when rise_paired = FALSE", {
     predict_cv(
       Y = d$Y, X = d$X,
       folds = 2,
-      engineering_params = list(method = "gene_level_fc"),
+      engineering_params = list(method = "engineer", gene_level_fc = TRUE),
       selection_params   = list(method = "variance", top_n = 3),
       individual_id = d$individual_id,
       timepoint = d$timepoint,
