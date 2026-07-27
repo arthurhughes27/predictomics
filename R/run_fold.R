@@ -15,6 +15,12 @@
 #' Returns predictions for the test partition, optional explicit selection
 #' diagnostics, and optional embedded selection diagnostics.
 #'
+#' If, after appending protected predictors, the fold's predictor matrix has
+#' zero columns (the baseline model with \code{X = NULL} in
+#' \code{\link{predict_cv}} and no covariates/treatment predictor), model
+#' fitting is skipped entirely and the training-fold mean of \code{Y} is used
+#' as the prediction for every held-out sample.
+#'
 #' @param k Integer. Fold index.
 #' @param fold_ids Integer vector of fold assignments.
 #' @param X_processed Numeric matrix. Predictor matrix after any outside-CV
@@ -125,26 +131,37 @@
   }
 
   # -- Model fitting and prediction -----------------------------------------
-  model_fit <- run_model(
-    X_train = X_train,
-    Y_train = Y_train,
-    params  = modifyList(model_params, list(fold_id = k))
-  )
+  predictions <- numeric(n)
 
-  # -- Embedded selection diagnostics ---------------------------------------
-  embedded_selection_diagnostics <- if (!is.null(model_fit$selected_features)) {
-    list(
-      selected_features = model_fit$selected_features,
-      selection_scores  = model_fit$selection_scores,
-      n_selected        = length(model_fit$selected_features)
-    )
+  if (ncol(X_train) == 0L) {
+
+    # No predictors at all (baseline model with X = NULL and no covariates/
+    # treatment predictor): predict the training-fold mean of Y directly,
+    # bypassing run_model()/predict_model() entirely.
+    embedded_selection_diagnostics <- NULL
+    predictions[test_idx] <- mean(Y_train)
+
   } else {
-    NULL
-  }
 
-  # -- Assemble predictions in original sample order ------------------------
-  predictions           <- numeric(n)
-  predictions[test_idx] <- predict_model(fit = model_fit, X_new = X_test)
+    model_fit <- run_model(
+      X_train = X_train,
+      Y_train = Y_train,
+      params  = modifyList(model_params, list(fold_id = k))
+    )
+
+    # -- Embedded selection diagnostics --------------------------------------
+    embedded_selection_diagnostics <- if (!is.null(model_fit$selected_features)) {
+      list(
+        selected_features = model_fit$selected_features,
+        selection_scores  = model_fit$selection_scores,
+        n_selected        = length(model_fit$selected_features)
+      )
+    } else {
+      NULL
+    }
+
+    predictions[test_idx] <- predict_model(fit = model_fit, X_new = X_test)
+  }
 
   list(
     predictions                    = predictions,
