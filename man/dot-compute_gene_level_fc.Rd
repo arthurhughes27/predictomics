@@ -50,7 +50,7 @@ individual (post-treatment row), or \code{NULL} if not supplied.}
 Internal workhorse for \code{gene_level_fc} engineering, called from
 \code{\link{predict_cv}} before the CV loop and before any other
 engineering or selection step. Assumes
-\code{\link{.validate_gene_level_fc_inputs}} has already been run, so every
+\code{\link{.validate_individual_timepoint_pairing}} has already been run, so every
 individual has exactly one pre-treatment (\code{timepoint = 0}) and one
 post-treatment (\code{timepoint = 1}) row.
 }

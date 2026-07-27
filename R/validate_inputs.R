@@ -385,7 +385,8 @@
 # -----------------------------------------------------------------------------
 .validate_selection_params <- function(params, p) {
 
-  supported <- c("variance", "pearson", "spearman", "relative_gain", "rise")
+  supported <- c("variance", "pearson", "spearman", "relative_gain", "rise",
+                 "dearseq")
   if (!params$method %in% supported)
     stop("[predictomics] selection_params$method must be one of: ",
          paste(supported, collapse = ", "), ".", call. = FALSE)
@@ -453,6 +454,56 @@
            "'less' or 'two.sided'.", call. = FALSE)
   }
 
+  # dearseq-specific validation
+  if (params$method == "dearseq") {
+
+    dearseq_mode <- params$dearseq_mode %||% "classic"
+    if (!dearseq_mode %in% c("classic", "paired"))
+      stop("[predictomics] selection_params$dearseq_mode must be 'classic' or ",
+           "'paired'.", call. = FALSE)
+
+    which_test <- params$dearseq_which_test %||% "asymptotic"
+    if (!which_test %in% c("asymptotic", "permutation"))
+      stop("[predictomics] selection_params$dearseq_which_test must be one ",
+           "of 'asymptotic' or 'permutation'.", call. = FALSE)
+
+    preprocessed <- params$dearseq_preprocessed %||% TRUE
+    if (!is.logical(preprocessed) || length(preprocessed) != 1L)
+      stop("[predictomics] selection_params$dearseq_preprocessed must be ",
+           "TRUE or FALSE.", call. = FALSE)
+
+    padjust_methods <- params$dearseq_padjust_methods %||% "BH"
+    if (!padjust_methods %in% stats::p.adjust.methods)
+      stop("[predictomics] selection_params$dearseq_padjust_methods must be ",
+           "one of: ", paste(stats::p.adjust.methods, collapse = ", "), ".",
+           call. = FALSE)
+
+    which_weights <- params$dearseq_which_weights %||% "loclin"
+    if (!which_weights %in% c("loclin", "voom", "none"))
+      stop("[predictomics] selection_params$dearseq_which_weights must be ",
+           "one of: 'loclin', 'voom', 'none'.", call. = FALSE)
+
+    n_perm <- params$dearseq_n_perm %||% 1000L
+    if (!is.numeric(n_perm) || length(n_perm) != 1L ||
+        n_perm != as.integer(n_perm) || n_perm < 1L)
+      stop("[predictomics] selection_params$dearseq_n_perm must be a ",
+           "positive integer.", call. = FALSE)
+
+    kernel <- params$dearseq_kernel %||% "gaussian"
+    if (!kernel %in% c("gaussian", "epanechnikov", "rectangular",
+                       "triangular", "biweight", "cosine", "optcosine"))
+      stop("[predictomics] selection_params$dearseq_kernel must be one of: ",
+           "'gaussian', 'epanechnikov', 'rectangular', 'triangular', ",
+           "'biweight', 'cosine', 'optcosine'.", call. = FALSE)
+
+    bw <- params$dearseq_bw %||% "nrd"
+    if (!((is.character(bw) && length(bw) == 1L) ||
+          (is.numeric(bw) && length(bw) == 1L && bw > 0)))
+      stop("[predictomics] selection_params$dearseq_bw must be a single ",
+           "positive numeric value or a bandwidth selector string (e.g. ",
+           "'nrd', 'nrd0', 'ucv', 'bcv', 'SJ').", call. = FALSE)
+  }
+
   invisible(NULL)
 }
 
@@ -488,40 +539,45 @@
 
 
 # -----------------------------------------------------------------------------
-#' Validate individual_id/timepoint for gene_level_fc engineering
+#' Validate a paired individual_id/timepoint design
 #'
 #' @description
 #' Checks that \code{individual_id} and \code{timepoint} are supplied, have
 #' the correct length and type, and that every individual has exactly two
 #' observations, one at each timepoint (0 = pre-treatment, 1 =
 #' post-treatment). Called from \code{predict_cv} when
-#' \code{engineering_params$gene_level_fc = TRUE} is detected.
+#' \code{engineering_params$gene_level_fc = TRUE} is detected, and from
+#' \code{run_selection} for \code{selection_params$dearseq_mode = "paired"}.
 #'
 #' @param individual_id Vector of length n identifying individuals, or
 #'   \code{NULL}.
 #' @param timepoint Binary numeric vector of length n (0/1), or \code{NULL}.
-#' @param Y The response vector, used for length compatibility checks.
+#' @param n Integer. Expected length of \code{individual_id}/\code{timepoint},
+#'   used for length compatibility checks.
+#' @param context Character string identifying the calling feature, used to
+#'   phrase the "both must be supplied" error message. Defaults to
+#'   \code{"engineering_params$gene_level_fc = TRUE"}.
 #' @return Invisibly returns \code{NULL} if validation passes.
 #' @keywords internal
 # -----------------------------------------------------------------------------
-.validate_gene_level_fc_inputs <- function(individual_id, timepoint, Y) {
+.validate_individual_timepoint_pairing <- function(
+    individual_id, timepoint, n,
+    context = "engineering_params$gene_level_fc = TRUE") {
 
   if (is.null(individual_id) || is.null(timepoint))
     stop(
-      "[predictomics] engineering_params$gene_level_fc = TRUE requires ",
-      "both 'individual_id' and 'timepoint' to be supplied to predict_cv().",
+      "[predictomics] ", context, " requires both 'individual_id' and ",
+      "'timepoint' to be supplied to predict_cv().",
       call. = FALSE
     )
 
-  n <- length(Y)
-
   if (length(individual_id) != n)
-    stop("[predictomics] individual_id must have the same length as Y (",
-         n, ").", call. = FALSE)
+    stop("[predictomics] individual_id must have length ", n, ".",
+         call. = FALSE)
 
   if (length(timepoint) != n)
-    stop("[predictomics] timepoint must have the same length as Y (",
-         n, ").", call. = FALSE)
+    stop("[predictomics] timepoint must have length ", n, ".",
+         call. = FALSE)
 
   if (anyNA(individual_id))
     stop("[predictomics] individual_id contains NA values.", call. = FALSE)
@@ -539,9 +595,9 @@
   bad_n    <- names(counts)[counts != 2L]
   if (length(bad_n) > 0L)
     stop(
-      "[predictomics] Each individual must have exactly 2 observations for ",
-      "gene_level_fc (one pre-treatment and one post-treatment). The ",
-      "following individual(s) do not: ", paste(bad_n, collapse = ", "), ".",
+      "[predictomics] Each individual must have exactly 2 observations ",
+      "(one pre-treatment and one post-treatment). The following ",
+      "individual(s) do not: ", paste(bad_n, collapse = ", "), ".",
       call. = FALSE
     )
 
@@ -553,8 +609,8 @@
   if (length(bad_tp) > 0L)
     stop(
       "[predictomics] Each individual must have exactly one pre-treatment ",
-      "(timepoint = 0) and one post-treatment (timepoint = 1) observation ",
-      "for gene_level_fc. The following individual(s) violate this: ",
+      "(timepoint = 0) and one post-treatment (timepoint = 1) observation. ",
+      "The following individual(s) violate this: ",
       paste(bad_tp, collapse = ", "), ".", call. = FALSE
     )
 

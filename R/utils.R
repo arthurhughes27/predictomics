@@ -182,3 +182,24 @@
     as.integer(treatment)
   }
 }
+
+
+# -----------------------------------------------------------------------------
+#' Build a design matrix (with intercept) for dearseq covariates
+#'
+#' @description
+#' Converts a covariate matrix or data frame into the full design matrix
+#' (including the intercept column) expected by \code{dearseq::dear_seq()}'s
+#' \code{covariates} argument. Unlike \code{\link{.prepare_covariate_matrix}},
+#' the intercept column is retained, matching \code{dear_seq()}'s convention.
+#'
+#' @param covariates A numeric matrix or data frame of dimensions n x q, or
+#'   \code{NULL}.
+#' @return A numeric design matrix (with intercept column) of dimensions
+#'   n x (q' + 1), or \code{NULL} if \code{covariates} is \code{NULL}.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.build_dearseq_covariates <- function(covariates) {
+  if (is.null(covariates)) return(NULL)
+  model.matrix(~ ., data = as.data.frame(covariates))
+}

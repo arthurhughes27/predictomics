@@ -13,6 +13,8 @@
 #   - "spearman"      : rank by absolute univariate Spearman correlation with Y
 #   - "relative_gain" : rank by CV prediction gain over a baseline model
 #   - "rise"          : rank by adjusted p-value from RISE (SurrogateRank package)
+#   - "dearseq"       : rank by adjusted p-value from a dearseq differential
+#                       expression analysis (dearseq package)
 # =============================================================================
 
 
@@ -46,6 +48,27 @@
 #'     are generated once and reused across all features, and the baseline
 #'     predictions are computed once per inner fold. Supported metrics:
 #'     \code{"rmse"}, \code{"srmse"}, \code{"r2"}, \code{"spearman"}.
+#'   \item \code{"dearseq"}: features are ranked by adjusted p-value from a
+#'     \code{dearseq::dear_seq()} differential expression analysis (requires
+#'     the Suggested \pkg{dearseq} package). Two modes are supported, chosen
+#'     via \code{dearseq_mode}:
+#'     \itemize{
+#'       \item \code{"classic"} (default): compares \code{treatment == 1} vs
+#'         \code{treatment == 0} (\code{treatment} required). If
+#'         \code{individual_id} and \code{timepoint} are also supplied,
+#'         \code{X_train} is first restricted to \code{timepoint == 1} rows
+#'         before the comparison is run.
+#'       \item \code{"paired"}: compares \code{timepoint == 1} vs
+#'         \code{timepoint == 0} (\code{individual_id} and \code{timepoint}
+#'         required, with every individual having exactly one observation at
+#'         each timepoint), with \code{sample_group = individual_id}. If
+#'         \code{treatment} is also supplied, \code{X_train} is first
+#'         restricted to \code{treatment == 1} rows before the comparison is
+#'         run.
+#'     }
+#'     In both cases, adjusted p-values are computed only from the (possibly
+#'     row-restricted) comparison, but apply to \emph{all} columns of
+#'     \code{X_train} (no columns are dropped before scoring).
 #' }
 #'
 #' All scores are computed on \code{X_train} only. The selected feature names
@@ -66,14 +89,27 @@
 #'   baseline model for \code{"relative_gain"}. Ignored for all other methods.
 #'   Pass \code{NULL} (default) for no covariates (intercept-only baseline).
 #' @param treatment A binary numeric vector of length n with values 0 and 1,
-#'   encoding treatment group membership. Required for \code{"rise"}; ignored
-#'   for all other methods. Pass \code{NULL} (default) if not applicable.
+#'   encoding treatment group membership. Required for \code{"rise"} and for
+#'   \code{"dearseq"} with \code{dearseq_mode = "classic"}; optionally used
+#'   to restrict rows for \code{"dearseq"} with
+#'   \code{dearseq_mode = "paired"}. Ignored for all other methods. Pass
+#'   \code{NULL} (default) if not applicable.
+#' @param individual_id Vector of length n identifying individuals. Required
+#'   for \code{"dearseq"} with \code{dearseq_mode = "paired"} (used as
+#'   \code{sample_group}); optionally used (together with \code{timepoint})
+#'   to restrict rows for \code{dearseq_mode = "classic"}. Ignored for all
+#'   other methods. Pass \code{NULL} (default) if not applicable.
+#' @param timepoint A binary numeric vector of length n (0/1), paired with
+#'   \code{individual_id}. Required for \code{"dearseq"} with
+#'   \code{dearseq_mode = "paired"}; optionally used to restrict rows for
+#'   \code{dearseq_mode = "classic"}. Ignored for all other methods. Pass
+#'   \code{NULL} (default) if not applicable.
 #' @param params A named list of selection parameters with the following
 #'   elements:
 #'   \describe{
 #'     \item{\code{method}}{Character string. One of \code{"variance"},
-#'       \code{"pearson"}, \code{"spearman"}, or \code{"relative_gain"}.
-#'       Required.}
+#'       \code{"pearson"}, \code{"spearman"}, \code{"relative_gain"},
+#'       \code{"rise"}, or \code{"dearseq"}. Required.}
 #'     \item{\code{top_n}}{Positive integer. Number of top-ranked features to
 #'       retain. Takes precedence over \code{threshold} if both are supplied.
 #'       Either \code{top_n} or \code{threshold} must be specified.}
@@ -81,8 +117,8 @@
 #'       to be retained. Used only when \code{top_n} is \code{NULL}. For
 #'       \code{"variance"}, a minimum variance; for \code{"pearson"} and
 #'       \code{"spearman"}, a minimum absolute correlation; for
-#'       \code{"relative_gain"}, a minimum gain; for \code{"rise"}, a
-#'       maximum adjusted p-value (e.g. \code{0.05}).}
+#'       \code{"relative_gain"}, a minimum gain; for \code{"rise"} and
+#'       \code{"dearseq"}, a maximum adjusted p-value (e.g. \code{0.05}).}
 #'     \item{\code{rise_alpha}}{Numeric. Significance level passed to
 #'       \code{rise.screen()} as \code{alpha}. Defaults to \code{0.05}.}
 #'     \item{\code{rise_power_want_s}}{Numeric in (0,1). Desired power for
@@ -104,6 +140,25 @@
 #'       \code{"two.sided"}. Defaults to \code{"two.sided"}.}
 #'     \item{\code{rise_paired}}{Logical. Whether data are paired, passed as
 #'       \code{paired}. Defaults to \code{FALSE}.}
+#'     \item{\code{dearseq_mode}}{Character string. One of \code{"classic"}
+#'       (default) or \code{"paired"}. See Details.}
+#'     \item{\code{dearseq_which_test}}{Character string. Passed to
+#'       \code{dear_seq()} as \code{which_test}. One of \code{"asymptotic"}
+#'       (default) or \code{"permutation"}.}
+#'     \item{\code{dearseq_preprocessed}}{Logical. Passed to \code{dear_seq()}
+#'       as \code{preprocessed}. Defaults to \code{TRUE}.}
+#'     \item{\code{dearseq_padjust_methods}}{Character string. Passed to
+#'       \code{dear_seq()} as \code{padjust_methods}. One of
+#'       \code{stats::p.adjust.methods}. Defaults to \code{"BH"}.}
+#'     \item{\code{dearseq_which_weights}}{Character string. Passed to
+#'       \code{dear_seq()} as \code{which_weights}. One of \code{"loclin"}
+#'       (default), \code{"voom"}, or \code{"none"}.}
+#'     \item{\code{dearseq_n_perm}}{Positive integer. Passed to
+#'       \code{dear_seq()} as \code{n_perm}. Defaults to \code{1000}.}
+#'     \item{\code{dearseq_bw}}{Character string or positive numeric. Passed
+#'       to \code{dear_seq()} as \code{bw}. Defaults to \code{"nrd"}.}
+#'     \item{\code{dearseq_kernel}}{Character string. Passed to
+#'       \code{dear_seq()} as \code{kernel}. Defaults to \code{"gaussian"}.}
 #'     \item{\code{metric}}{Character string. Metric used to evaluate
 #'       prediction quality in \code{"relative_gain"}. One of \code{"rmse"},
 #'       \code{"srmse"}, \code{"r2"}, or \code{"spearman"}. Defaults to
@@ -158,7 +213,8 @@
 #' @export
 # -----------------------------------------------------------------------------
 run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
-                          treatment = NULL, params) {
+                          treatment = NULL, individual_id = NULL,
+                          timepoint = NULL, params) {
 
   # ---------------------------------------------------------------------------
   # 1. Validate inputs
@@ -194,6 +250,48 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
       stop("[predictomics] The SurrogateRank package is required for ",
            "method = 'rise'. Install it with: install.packages('SurrogateRank')",
            call. = FALSE)
+  }
+
+  if (method == "dearseq") {
+
+    dearseq_mode <- params$dearseq_mode %||% "classic"
+
+    if (dearseq_mode == "classic") {
+
+      if (is.null(treatment))
+        stop("[predictomics] treatment must be provided for method = ",
+             "'dearseq' with dearseq_mode = 'classic'.", call. = FALSE)
+
+      if (xor(is.null(individual_id), is.null(timepoint)))
+        stop("[predictomics] For dearseq_mode = 'classic', 'individual_id' ",
+             "and 'timepoint' must be supplied together, or not at all.",
+             call. = FALSE)
+
+      if (!is.null(individual_id))
+        .validate_individual_timepoint_pairing(
+          individual_id = individual_id,
+          timepoint     = timepoint,
+          n             = nrow(X_train),
+          context       = paste0(
+            "selection_params$method = 'dearseq' with dearseq_mode = ",
+            "'classic' and individual_id/timepoint"
+          )
+        )
+
+    } else {
+
+      .validate_individual_timepoint_pairing(
+        individual_id = individual_id,
+        timepoint     = timepoint,
+        n             = nrow(X_train),
+        context       = "selection_params$dearseq_mode = 'paired'"
+      )
+    }
+
+    if (!requireNamespace("dearseq", quietly = TRUE))
+      stop("[predictomics] The dearseq package is required for ",
+           "method = 'dearseq'. Install it with: ",
+           "BiocManager::install('dearseq')", call. = FALSE)
   }
 
   # top_n takes precedence - inform the user
@@ -246,10 +344,28 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                        alternative      = params$rise_alternative   %||% "two.sided",
                        paired           = params$rise_paired         %||% FALSE
                      )
+                   },
+
+                   dearseq = {
+                     .compute_dearseq_scores(
+                       X_train         = X_train,
+                       covariates      = covariates,
+                       treatment       = treatment,
+                       individual_id   = individual_id,
+                       timepoint       = timepoint,
+                       dearseq_mode    = params$dearseq_mode          %||% "classic",
+                       which_test      = params$dearseq_which_test    %||% "asymptotic",
+                       preprocessed    = params$dearseq_preprocessed  %||% TRUE,
+                       padjust_methods = params$dearseq_padjust_methods %||% "BH",
+                       which_weights   = params$dearseq_which_weights %||% "loclin",
+                       n_perm          = params$dearseq_n_perm        %||% 1000L,
+                       bw              = params$dearseq_bw            %||% "nrd",
+                       kernel          = params$dearseq_kernel        %||% "gaussian"
+                     )
                    }
   )
 
-  if (method == "rise") {
+  if (method %in% c("rise", "dearseq")) {
     scores <- sort(scores, decreasing = FALSE)
   } else {
     scores <- sort(scores, decreasing = TRUE)
@@ -282,15 +398,15 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
 
   } else {
 
-    if (method == "rise") {
+    if (method %in% c("rise", "dearseq")) {
 
-      # For RISE, threshold is a maximum p-value (lower = better)
+      # For RISE/dearseq, threshold is a maximum p-value (lower = better)
       sel <- names(scores)[scores <= threshold]
 
       if (length(sel) == 0L)
-        stop("[predictomics] No features pass the RISE p-value threshold (",
-             threshold, "). Consider raising the threshold or using top_n ",
-             "instead.", call. = FALSE)
+        stop("[predictomics] No features pass the '", method, "' p-value ",
+             "threshold (", threshold, "). Consider raising the threshold or ",
+             "using top_n instead.", call. = FALSE)
 
       sel
 
@@ -608,4 +724,102 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   # Returned unsorted; run_selection sorts ascending so best features come first.
   names(scores_stored) <- colnames(X_train)
   scores_stored
+}
+
+
+# -----------------------------------------------------------------------------
+#' Compute dearseq adjusted p-value scores for feature selection
+#'
+#' @description
+#' Calls \code{dearseq::dear_seq()} to test for differential expression
+#' across a binary grouping variable, then returns adjusted p-values for all
+#' features (columns) of \code{X_train}. Two modes are supported:
+#' \describe{
+#'   \item{\code{"classic"}}{Compares \code{treatment == 1} vs
+#'     \code{treatment == 0}. If \code{individual_id}/\code{timepoint} are
+#'     supplied, rows are first restricted to \code{timepoint == 1}.}
+#'   \item{\code{"paired"}}{Compares \code{timepoint == 1} vs
+#'     \code{timepoint == 0}, with \code{sample_group = individual_id}. If
+#'     \code{treatment} is supplied, rows are first restricted to
+#'     \code{treatment == 1}.}
+#' }
+#' Only rows are ever restricted before the comparison; all columns of
+#' \code{X_train} are scored regardless.
+#'
+#' @param X_train Numeric matrix. Training predictor matrix (samples x
+#'   features).
+#' @param covariates Numeric matrix or data frame, or \code{NULL}. Passed to
+#'   \code{dear_seq()} as a full design matrix (with intercept) via
+#'   \code{\link{.build_dearseq_covariates}}.
+#' @param treatment Binary numeric vector (0/1), factor, or \code{NULL}.
+#' @param individual_id Vector identifying individuals, or \code{NULL}.
+#' @param timepoint Binary numeric vector (0/1), or \code{NULL}.
+#' @param dearseq_mode Character string. One of \code{"classic"} or
+#'   \code{"paired"}.
+#' @param which_test,preprocessed,padjust_methods,which_weights,n_perm,bw,kernel
+#'   Arguments passed directly to \code{dearseq::dear_seq()}.
+#'
+#' @return Named numeric vector of adjusted p-values, one per feature, in
+#'   \code{colnames(X_train)} order.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.compute_dearseq_scores <- function(X_train, covariates, treatment,
+                                    individual_id, timepoint, dearseq_mode,
+                                    which_test, preprocessed, padjust_methods,
+                                    which_weights, n_perm, bw, kernel) {
+
+  treatment_bin <- if (!is.null(treatment)) .coerce_treatment_binary(treatment)
+  else NULL
+
+  if (dearseq_mode == "classic") {
+
+    keep <- if (!is.null(individual_id))
+      which(timepoint == 1)
+    else
+      seq_len(nrow(X_train))
+
+    group_var    <- treatment_bin[keep]
+    group_name   <- "treatment"
+    sample_group <- NULL
+
+  } else {
+
+    keep <- if (!is.null(treatment_bin))
+      which(treatment_bin == 1)
+    else
+      seq_len(nrow(X_train))
+
+    group_var    <- timepoint[keep]
+    group_name   <- "timepoint"
+    sample_group <- individual_id[keep]
+  }
+
+  X_sub   <- X_train[keep, , drop = FALSE]
+  cov_sub <- if (!is.null(covariates)) covariates[keep, , drop = FALSE] else NULL
+
+  exprmat <- t(X_sub)
+  variables2test <- matrix(group_var, ncol = 1L,
+                           dimnames = list(NULL, group_name))
+  covariates_design <- .build_dearseq_covariates(cov_sub)
+
+  res <- suppressMessages(
+    dearseq::dear_seq(
+      exprmat         = exprmat,
+      covariates      = covariates_design,
+      variables2test  = variables2test,
+      sample_group    = sample_group,
+      which_test      = which_test,
+      preprocessed    = preprocessed,
+      padjust_methods = padjust_methods,
+      which_weights   = which_weights,
+      n_perm          = n_perm,
+      bw              = bw,
+      kernel          = kernel
+    )
+  )
+
+  adj_pval <- res[["pvals"]]$adjPval
+  names(adj_pval) <- rownames(exprmat)
+
+  adj_pval[colnames(X_train)]
 }

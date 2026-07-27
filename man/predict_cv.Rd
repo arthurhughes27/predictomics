@@ -75,11 +75,16 @@ sample (row of \code{X}) belongs to. Required when
 \code{engineering_params$gene_level_fc = TRUE} is used, in which case
 every individual must have exactly two observations: one at
 \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
-(post-treatment). Pass \code{NULL} (default) otherwise.}
+(post-treatment). Also required when
+\code{selection_params$dearseq_mode = "paired"} is used (same pairing
+requirement), and optionally used to restrict
+\code{selection_params$dearseq_mode = "classic"} to
+\code{timepoint == 1} rows. Pass \code{NULL} (default) otherwise.}
 
 \item{timepoint}{A binary numeric vector of length n (0 = pre-treatment,
 1 = post-treatment), paired with \code{individual_id}. Required when
-\code{engineering_params$gene_level_fc = TRUE} is used. Pass
+\code{engineering_params$gene_level_fc = TRUE} or
+\code{selection_params$dearseq_mode = "paired"} is used. Pass
 \code{NULL} (default) otherwise.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints progress messages throughout.
@@ -113,6 +118,11 @@ supplied.}
 \item{\code{n_samples}}{Integer. Number of samples.}
 \item{\code{n_features_input}}{Integer. Number of features in the input
 \code{X}.}
+\item{\code{dearseq_selection}}{A list containing
+\code{selected_features}, \code{selection_scores} (adjusted
+p-values for all genes), \code{dearseq_mode}, and \code{n_selected}
+from the upfront dearseq filter. \code{NULL} if
+\code{selection_params$method != "dearseq"}.}
 \item{\code{fold_selection_diagnostics}}{A list of length
 \code{n_folds}, each element containing \code{selected_features},
 \code{selection_scores}, and \code{n_selected} for that fold.
@@ -160,6 +170,18 @@ from the post-treatment observation). \code{individual_id} and
 \code{timepoint} are then discarded and the remainder of the pipeline
 operates on the fold-change-transformed dataset as normal. This mode is
 not compatible with \code{selection_params$rise_paired = TRUE}.
+
+If \code{selection_params$method = "dearseq"} is specified, a
+differential expression filter (\code{dearseq::dear_seq()}) is applied
+\strong{once, on the full, untransformed dataset, before any engineering
+(including \code{gene_level_fc}) or other selection, and regardless of
+\code{outside_cv}} - differential expression analysis is not meaningful on
+transformed data, so this is a deliberate exception to the fold-safe
+default described above. The resulting gene list is used to filter
+\code{X} before the rest of the pipeline runs as normal; \code{dearseq}
+fully replaces the selection step for that call (no further per-fold or
+outside-cv selection is performed). See \code{\link{run_selection}} for
+the \code{"classic"}/\code{"paired"} modes and hyperparameters.
 
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and
