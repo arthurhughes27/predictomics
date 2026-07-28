@@ -712,7 +712,7 @@ plot.predictomics_comparison <- function(x,
         inherit.aes = FALSE
       ) +
       ggplot2::facet_wrap(~metric, scales = "free_y") +
-      ggplot2::scale_linetype_manual(name = "Pipelines",
+      ggplot2::scale_linetype_manual(name = NULL,
                                      values = c(Baseline = "dashed")) +
       pattern_scale +
       ggplot2::labs(
@@ -750,7 +750,7 @@ plot.predictomics_comparison <- function(x,
         ggplot2::aes(label = round(metric_value, 3)),
         vjust = -0.4, size = 3, colour = "grey20"
       ) +
-      ggplot2::scale_linetype_manual(name = "Pipelines",
+      ggplot2::scale_linetype_manual(name = NULL,
                                      values = c(Baseline = "dashed")) +
       pattern_scale +
       ggplot2::labs(

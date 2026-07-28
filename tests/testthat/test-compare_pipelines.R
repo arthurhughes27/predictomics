@@ -268,10 +268,11 @@ test_that("plot.predictomics_comparison shows the baseline as a line, not a bar"
   bar_data <- ggplot2::layer_data(p, 1)
   expect_equal(nrow(bar_data), nrow(cmp$results) - 1L)
 
-  # A linetype scale exists for the "Baseline" reference line, sharing the
-  # "Pipelines" legend title with the bar fill scale.
+  # A linetype scale exists for the "Baseline" reference line, grouped
+  # visually under the bar fill scale's "Pipelines" legend title without
+  # repeating that title a second time (linetype has no title of its own).
   expect_equal(p$labels$fill, "Pipelines")
-  expect_equal(p$labels$linetype, "Pipelines")
+  expect_null(p$labels$linetype)
 
   has_linetype_scale <- any(vapply(
     p$scales$scales, function(s) "linetype" %in% s$aesthetics, logical(1)
