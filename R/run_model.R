@@ -3,7 +3,8 @@
 # Model fitting and prediction for the predictomics package.
 #
 # Implements a unified interface for fitting predictive models with inner-CV
-# hyperparameter tuning via the caret package. Supported models:
+# hyperparameter tuning via the caret package. Supported models
+# (model_params$method / params$method):
 #   - "lm"     : ordinary least squares (no tuning)
 #   - "glmnet" : elastic net regression (alpha, lambda tuned by inner CV)
 #   - "ridge"  : ridge regression via glmnet package (lambda tuned by inner CV)
@@ -54,6 +55,10 @@
 #' (splitting criterion). \code{num.threads} is fixed to 1 to avoid thread
 #' oversubscription when the outer CV loop is parallelised.
 #'
+#' **svr**: fits a support vector regression with a linear kernel via
+#' \code{kernlab} (caret method \code{"svmLinear"}). Tunes \code{C} (cost)
+#' via inner CV.
+#'
 #' @param X_train Numeric matrix of dimensions n (samples) x p (features).
 #'   Training predictor matrix. Must have column names.
 #' @param Y_train Numeric vector of length n. Training response variable.
@@ -61,8 +66,8 @@
 #'   for the \code{model_params} argument. Supported fields:
 #'   \describe{
 #'     \item{\code{method}}{Character string. One of \code{"lm"},
-#'       \code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, or \code{"ranger"}.
-#'       Required.}
+#'       \code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, \code{"ranger"}, or
+#'       \code{"svr"}. Required.}
 #'     \item{\code{inner_folds}}{Positive integer. Number of inner CV folds
 #'       for hyperparameter tuning. Defaults to \code{5}. Ignored for
 #'       \code{"lm"}.}
@@ -123,6 +128,9 @@
 #'                           min.node.size = c(1, 5),
 #'                           splitrule = "variance")
 #' ))
+#'
+#' # Support vector regression (linear kernel)
+#' fit <- run_model(X_train, Y_train, params = list(method = "svr"))
 #' }
 #'
 #' @export

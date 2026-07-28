@@ -54,8 +54,12 @@ apply. See \code{\link{run_selection}} for supported options. Pass
 \code{NULL} (default) to skip selection.}
 
 \item{model_params}{A named list specifying the model and hyperparameter
-options. See \code{\link{run_model}} for supported options. Defaults to
-\code{list(method = "lm")} (ordinary least squares).}
+options. \code{model_params$method} must be one of \code{"lm"}
+(ordinary least squares), \code{"glmnet"} (elastic net), \code{"ridge"},
+\code{"lasso"}, \code{"ranger"} (random forest), or \code{"svr"}
+(support vector regression, linear kernel). See \code{\link{run_model}}
+for supported options. Defaults to \code{list(method = "lm")}
+(ordinary least squares).}
 
 \item{outside_cv}{Logical. If \code{TRUE}, engineering and selection steps
 are applied to the full dataset \strong{before} the CV loop. This

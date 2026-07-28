@@ -16,8 +16,8 @@ Training predictor matrix. Must have column names.}
 for the \code{model_params} argument. Supported fields:
 \describe{
 \item{\code{method}}{Character string. One of \code{"lm"},
-\code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, or \code{"ranger"}.
-Required.}
+\code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, \code{"ranger"}, or
+\code{"svr"}. Required.}
 \item{\code{inner_folds}}{Positive integer. Number of inner CV folds
 for hyperparameter tuning. Defaults to \code{5}. Ignored for
 \code{"lm"}.}
@@ -85,6 +85,10 @@ to \code{"lm"} with a warning. For \code{"lasso"} and \code{"glmnet"}
 \code{min.node.size} (minimum node size), and \code{splitrule}
 (splitting criterion). \code{num.threads} is fixed to 1 to avoid thread
 oversubscription when the outer CV loop is parallelised.
+
+\strong{svr}: fits a support vector regression with a linear kernel via
+\code{kernlab} (caret method \code{"svmLinear"}). Tunes \code{C} (cost)
+via inner CV.
 }
 \examples{
 \dontrun{
@@ -111,6 +115,9 @@ fit <- run_model(X_train, Y_train, params = list(
                           min.node.size = c(1, 5),
                           splitrule = "variance")
 ))
+
+# Support vector regression (linear kernel)
+fit <- run_model(X_train, Y_train, params = list(method = "svr"))
 }
 
 }
