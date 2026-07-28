@@ -35,10 +35,13 @@ The Reference and Alternative pipelines are shown as coloured bars; the
 Baseline is shown instead as a dashed horizontal line (both are part of a
 single "Pipelines" legend) annotated with its metric value at the right of
 the panel. The best-performing bar (lowest \code{RMSE}/\code{sRMSE}, or
-highest \code{R2}/\code{SpearmanR}) is outlined in black, without altering
-its fill colour, so the "Pipelines" legend remains accurate. When
+highest \code{R2}/\code{SpearmanR}) is marked with a diagonal hatch pattern
+(via the Suggested \pkg{ggpattern} package, with a "Best pipeline" legend
+key), without altering its fill colour, so the "Pipelines" legend remains
+accurate. If \pkg{ggpattern} is not installed, the best bar is instead
+outlined in black (no separate legend key in that case). When
 \code{metric = "all"}, the four metrics are shown as facets, each with its
-own best-bar outline and baseline annotation.
+own best-bar highlight and baseline annotation.
 }
 \seealso{
 \code{\link{compare_pipelines}},

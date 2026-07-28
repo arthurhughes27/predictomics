@@ -240,6 +240,45 @@ test_that("plot.predictomics_comparison shows the baseline as a line, not a bar"
   expect_true(has_linetype_scale)
 })
 
+test_that("plot.predictomics_comparison marks the best-performing bar without changing fill colours", {
+  d <- .make_compare_data()
+
+  cmp <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "selection",
+    option_choices = list(
+      list(method = "spearman", top_n = 5),
+      list(method = "variance", top_n = 5)
+    ),
+    reference_params = list(
+      selection_params = list(method = "pearson", top_n = 5),
+      model_params      = list(method = "lm")
+    ),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  p <- plot(cmp, metric = "sRMSE")
+
+  expect_true("is_best" %in% names(p$data))
+  expect_equal(sum(p$data$is_best), 1L)
+
+  best_pipeline     <- as.character(p$data$pipeline[p$data$is_best])
+  expected_best     <- as.character(p$data$pipeline[which.min(p$data$metric_value)])
+  expect_equal(best_pipeline, expected_best)
+
+  # Only two fills are ever used (Reference/Alternative) - is_best never
+  # introduces a third fill level.
+  expect_equal(nlevels(droplevels(p$data$role)), 2L)
+
+  if (requireNamespace("ggpattern", quietly = TRUE)) {
+    has_pattern_scale <- any(vapply(
+      p$scales$scales, function(s) "pattern" %in% s$aesthetics, logical(1)
+    ))
+    expect_true(has_pattern_scale)
+  }
+})
+
 test_that("predict_cv's own messages are suppressed, but compare_pipelines's are not", {
   d <- .make_compare_data()
 
