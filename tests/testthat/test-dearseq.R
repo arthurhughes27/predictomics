@@ -175,6 +175,100 @@ test_that("run_selection computes dearseq scores for all genes (classic mode)", 
   expect_true(all(diff(res$selection_scores) >= 0))
 })
 
+test_that(".build_dearseq_covariates drops a single-level covariate with a warning", {
+  covs <- data.frame(sex = rep("Female", 6), age = rnorm(6))
+
+  expect_warning(design <- .build_dearseq_covariates(covs), "sex")
+  expect_false("sexFemale" %in% colnames(design))
+  expect_true("age" %in% colnames(design))
+})
+
+test_that(".build_dearseq_covariates returns NULL with a message when all covariates are single-level", {
+  covs <- data.frame(sex = rep("Female", 6))
+
+  expect_message(design <- .build_dearseq_covariates(covs),
+                 "All dearseq covariates")
+  expect_null(design)
+})
+
+test_that("run_selection no longer errors on a constant covariate for dearseq (regression test)", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+  constant_covariates <- data.frame(sex = rep("Female", nrow(d$X)))
+
+  expect_warning(
+    res <- run_selection(
+      X_train    = d$X,
+      covariates = constant_covariates,
+      treatment  = d$treatment,
+      params     = list(method = "dearseq", dearseq_mode = "classic",
+                        threshold = 1.1)
+    ),
+    "sex"
+  )
+  expect_equal(length(res$selection_scores), ncol(d$X))
+})
+
+test_that("run_selection validates selection_params$dearseq_covariates", {
+  d <- .make_dearseq_data()
+
+  expect_error(
+    run_selection(
+      X_train    = d$X,
+      treatment  = d$treatment,
+      params     = list(method = "dearseq", dearseq_mode = "classic",
+                        threshold = 0.05,
+                        dearseq_covariates = matrix(1:3, nrow = 3))
+    ),
+    "same number of rows"
+  )
+
+  bad_names <- matrix(rnorm(nrow(d$X) * 2), nrow = nrow(d$X))
+  expect_error(
+    run_selection(
+      X_train    = d$X,
+      treatment  = d$treatment,
+      params     = list(method = "dearseq", dearseq_mode = "classic",
+                        threshold = 0.05,
+                        dearseq_covariates = bad_names)
+    ),
+    "column names"
+  )
+
+  expect_error(
+    run_selection(
+      X_train    = d$X,
+      treatment  = d$treatment,
+      params     = list(method = "dearseq", dearseq_mode = "classic",
+                        threshold = 0.05,
+                        dearseq_covariates = 1:nrow(d$X))
+    ),
+    "matrix or data frame"
+  )
+})
+
+test_that("run_selection uses dearseq_covariates in place of covariates for the dearseq comparison", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+
+  # A covariate constant across every row would otherwise be dropped (with a
+  # warning) by .build_dearseq_covariates() - supplying a non-constant
+  # dearseq_covariates instead should run cleanly, with no warning about it.
+  constant_covariates <- data.frame(sex = rep("Female", nrow(d$X)))
+  alt_covariates       <- data.frame(age = rnorm(nrow(d$X)))
+
+  res <- run_selection(
+    X_train            = d$X,
+    covariates         = constant_covariates,
+    treatment          = d$treatment,
+    params             = list(method = "dearseq", dearseq_mode = "classic",
+                              threshold = 1.1,
+                              dearseq_covariates = alt_covariates)
+  )
+
+  expect_equal(length(res$selection_scores), ncol(d$X))
+})
+
 test_that("run_selection computes dearseq scores for all genes (paired mode)", {
   testthat::skip_if_not_installed("dearseq")
   d <- .make_dearseq_data()

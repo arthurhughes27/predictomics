@@ -193,13 +193,53 @@
 #' \code{covariates} argument. Unlike \code{\link{.prepare_covariate_matrix}},
 #' the intercept column is retained, matching \code{dear_seq()}'s convention.
 #'
+#' @details
+#' Any covariate with fewer than 2 unique values (in the rows actually
+#' supplied - typically already row-restricted by dearseq's classic/paired
+#' mode) is dropped with a warning before building the design matrix, mirroring
+#' \code{\link{.prepare_covariate_matrix}}'s guard. Without this, a covariate
+#' that happens to be constant (e.g. because the caller pre-filtered their
+#' data on it) would cause \code{model.matrix()} to error with "contrasts can
+#' only be applied to factors with 2 or more levels" instead of being silently
+#' (and correctly) excluded.
+#'
 #' @param covariates A numeric matrix or data frame of dimensions n x q, or
 #'   \code{NULL}.
 #' @return A numeric design matrix (with intercept column) of dimensions
-#'   n x (q' + 1), or \code{NULL} if \code{covariates} is \code{NULL}.
+#'   n x (q' + 1), or \code{NULL} if \code{covariates} is \code{NULL} or all
+#'   covariates were dropped for having a single unique value.
 #' @keywords internal
 # -----------------------------------------------------------------------------
 .build_dearseq_covariates <- function(covariates) {
   if (is.null(covariates)) return(NULL)
-  model.matrix(~ ., data = as.data.frame(covariates))
+
+  cov_df <- as.data.frame(covariates)
+
+  n_levels <- vapply(cov_df, function(col) {
+    if (is.numeric(col)) length(unique(col[!is.na(col)]))
+    else                  nlevels(factor(col[!is.na(col)]))
+  }, integer(1))
+
+  null_covs <- names(n_levels)[n_levels < 2L]
+
+  if (length(null_covs) > 0L) {
+    warning(
+      "[predictomics] The following dearseq covariate(s) have only one ",
+      "unique value and will be removed from the dearseq comparison: ",
+      paste(null_covs, collapse = ", "), ".",
+      call. = FALSE
+    )
+    cov_df <- cov_df[, n_levels >= 2L, drop = FALSE]
+  }
+
+  if (ncol(cov_df) == 0L) {
+    message(
+      "[predictomics] All dearseq covariates were removed due to having ",
+      "only one unique value. Proceeding without covariates for the ",
+      "dearseq comparison."
+    )
+    return(NULL)
+  }
+
+  model.matrix(~ ., data = cov_df)
 }

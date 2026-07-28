@@ -12,12 +12,23 @@
 }
 \value{
 A numeric design matrix (with intercept column) of dimensions
-n x (q' + 1), or \code{NULL} if \code{covariates} is \code{NULL}.
+n x (q' + 1), or \code{NULL} if \code{covariates} is \code{NULL} or all
+covariates were dropped for having a single unique value.
 }
 \description{
 Converts a covariate matrix or data frame into the full design matrix
 (including the intercept column) expected by \code{dearseq::dear_seq()}'s
 \code{covariates} argument. Unlike \code{\link{.prepare_covariate_matrix}},
 the intercept column is retained, matching \code{dear_seq()}'s convention.
+}
+\details{
+Any covariate with fewer than 2 unique values (in the rows actually
+supplied - typically already row-restricted by dearseq's classic/paired
+mode) is dropped with a warning before building the design matrix, mirroring
+\code{\link{.prepare_covariate_matrix}}'s guard. Without this, a covariate
+that happens to be constant (e.g. because the caller pre-filtered their
+data on it) would cause \code{model.matrix()} to error with "contrasts can
+only be applied to factors with 2 or more levels" instead of being silently
+(and correctly) excluded.
 }
 \keyword{internal}

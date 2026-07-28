@@ -23,8 +23,10 @@ Required for \code{"pearson"}, \code{"spearman"}, and
 \code{"relative_gain"}; ignored for \code{"variance"}.}
 
 \item{covariates}{A numeric matrix of dimensions n x q to include in the
-baseline model for \code{"relative_gain"}. Ignored for all other methods.
-Pass \code{NULL} (default) for no covariates (intercept-only baseline).}
+baseline model for \code{"relative_gain"}. Also used as the default
+covariates for \code{"dearseq"}, unless \code{params$dearseq_covariates}
+is supplied. Ignored for all other methods. Pass \code{NULL} (default)
+for no covariates (intercept-only baseline).}
 
 \item{treatment}{A binary numeric vector of length n with values 0 and 1,
 encoding treatment group membership. Required for \code{"rise"} and for
@@ -105,6 +107,14 @@ as \code{preprocessed}. Defaults to \code{TRUE}.}
 to \code{dear_seq()} as \code{bw}. Defaults to \code{"nrd"}.}
 \item{\code{dearseq_kernel}}{Character string. Passed to
 \code{dear_seq()} as \code{kernel}. Defaults to \code{"gaussian"}.}
+\item{\code{dearseq_covariates}}{A numeric matrix or data frame of
+covariates to use specifically for the dearseq comparison, in place
+of the \code{covariates} argument. Useful when the covariates
+desired for differential expression testing differ from those used
+in the main prediction pipeline. Row count must match
+\code{nrow(X_train)}. Only applicable to \code{method = "dearseq"};
+ignored for other methods. Defaults to \code{NULL}, in which case
+the \code{covariates} argument is used for dearseq as well.}
 \item{\code{relative_gain_metric}}{Character string. Metric used to
 evaluate prediction quality. Only applicable to
 \code{method = "relative_gain"}. One of \code{"rmse"},
