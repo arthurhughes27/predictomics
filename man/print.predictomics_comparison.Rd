@@ -24,5 +24,5 @@ option pipelines fit by \code{\link{compare_pipelines}}.
 }
 \seealso{
 \code{\link{compare_pipelines}},
-  \code{\link{plot.predictomics_comparison}}
+\code{\link{plot.predictomics_comparison}}
 }

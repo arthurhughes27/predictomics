@@ -63,5 +63,11 @@ Internal workhorse called by \code{future.apply::future_lapply} in
 selection, protected predictor appending, model fitting, and prediction.
 Returns predictions for the test partition, optional explicit selection
 diagnostics, and optional embedded selection diagnostics.
+
+If, after appending protected predictors, the fold's predictor matrix has
+zero columns (the baseline model with \code{X = NULL} in
+\code{\link{predict_cv}} and no covariates/treatment predictor), model
+fitting is skipped entirely and the training-fold mean of \code{Y} is used
+as the prediction for every held-out sample.
 }
 \keyword{internal}
