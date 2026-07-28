@@ -95,8 +95,10 @@
 #'   Required for \code{"pearson"}, \code{"spearman"}, and
 #'   \code{"relative_gain"}; ignored for \code{"variance"}.
 #' @param covariates A numeric matrix of dimensions n x q to include in the
-#'   baseline model for \code{"relative_gain"}. Ignored for all other methods.
-#'   Pass \code{NULL} (default) for no covariates (intercept-only baseline).
+#'   baseline model for \code{"relative_gain"}. Also used as the default
+#'   covariates for \code{"dearseq"}, unless \code{params$dearseq_covariates}
+#'   is supplied. Ignored for all other methods. Pass \code{NULL} (default)
+#'   for no covariates (intercept-only baseline).
 #' @param treatment A binary numeric vector of length n with values 0 and 1,
 #'   encoding treatment group membership. Required for \code{"rise"} and for
 #'   \code{"dearseq"} with \code{dearseq_mode = "classic"}; optionally used
@@ -173,6 +175,14 @@
 #'       to \code{dear_seq()} as \code{bw}. Defaults to \code{"nrd"}.}
 #'     \item{\code{dearseq_kernel}}{Character string. Passed to
 #'       \code{dear_seq()} as \code{kernel}. Defaults to \code{"gaussian"}.}
+#'     \item{\code{dearseq_covariates}}{A numeric matrix or data frame of
+#'       covariates to use specifically for the dearseq comparison, in place
+#'       of the \code{covariates} argument. Useful when the covariates
+#'       desired for differential expression testing differ from those used
+#'       in the main prediction pipeline. Row count must match
+#'       \code{nrow(X_train)}. Only applicable to \code{method = "dearseq"};
+#'       ignored for other methods. Defaults to \code{NULL}, in which case
+#'       the \code{covariates} argument is used for dearseq as well.}
 #'     \item{\code{relative_gain_metric}}{Character string. Metric used to
 #'       evaluate prediction quality. Only applicable to
 #'       \code{method = "relative_gain"}. One of \code{"rmse"},
@@ -310,6 +320,20 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
       )
     }
 
+    dearseq_covariates <- params$dearseq_covariates
+    if (!is.null(dearseq_covariates)) {
+      if (!is.matrix(dearseq_covariates) && !is.data.frame(dearseq_covariates))
+        stop("[predictomics] selection_params$dearseq_covariates must be a ",
+             "numeric matrix or data frame, or NULL.", call. = FALSE)
+      if (nrow(dearseq_covariates) != nrow(X_train))
+        stop("[predictomics] selection_params$dearseq_covariates must have ",
+             "the same number of rows as X_train (", nrow(X_train), ").",
+             call. = FALSE)
+      if (is.null(colnames(dearseq_covariates)))
+        stop("[predictomics] selection_params$dearseq_covariates must have ",
+             "column names.", call. = FALSE)
+    }
+
     if (!requireNamespace("dearseq", quietly = TRUE))
       stop("[predictomics] The dearseq package is required for ",
            "method = 'dearseq'. Install it with: ",
@@ -369,10 +393,11 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                    },
 
                    dearseq = {
+                     dearseq_covariates <- params$dearseq_covariates %||% covariates
                      if ((params$dearseq_level %||% "gene") == "geneset") {
                        .compute_dearseq_geneset_scores(
                          X_train         = X_train,
-                         covariates      = covariates,
+                         covariates      = dearseq_covariates,
                          treatment       = treatment,
                          individual_id   = individual_id,
                          timepoint       = timepoint,
@@ -389,7 +414,7 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                      } else {
                        .compute_dearseq_scores(
                          X_train         = X_train,
-                         covariates      = covariates,
+                         covariates      = dearseq_covariates,
                          treatment       = treatment,
                          individual_id   = individual_id,
                          timepoint       = timepoint,
