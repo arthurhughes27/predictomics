@@ -85,17 +85,21 @@ sample (row of \code{X}) belongs to. Required when
 \code{engineering_params$gene_level_fc = TRUE} is used, in which case
 every individual must have exactly two observations: one at
 \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
-(post-treatment). Also required when
-\code{selection_params$dearseq_mode = "paired"} is used (same pairing
-requirement), and optionally used to restrict
+(post-treatment). Also required when \code{selection_params$dearseq_mode
+= "paired"} or \code{selection_params$rise_paired = TRUE} is used (same
+pairing requirement), and optionally used to restrict
 \code{selection_params$dearseq_mode = "classic"} to
 \code{timepoint == 1} rows. Pass \code{NULL} (default) otherwise.}
 
 \item{timepoint}{A binary numeric vector of length n (0 = pre-treatment,
 1 = post-treatment), paired with \code{individual_id}. Required when
-\code{engineering_params$gene_level_fc = TRUE} or
-\code{selection_params$dearseq_mode = "paired"} is used. Pass
-\code{NULL} (default) otherwise.}
+\code{engineering_params$gene_level_fc = TRUE},
+\code{selection_params$dearseq_mode = "paired"}, or
+\code{selection_params$rise_paired = TRUE} is used - for the latter,
+\code{timepoint} is the pre/post contrast (in place of \code{treatment})
+and rows are sorted by \code{individual_id} (then \code{timepoint})
+before fitting, so input row order does not matter. Pass \code{NULL}
+(default) otherwise.}
 
 \item{verbose}{Logical. If \code{TRUE}, prints progress messages throughout.
 Defaults to \code{TRUE}.}
@@ -212,6 +216,20 @@ is required downstream. With \code{dearseq_level = "geneset"}, any
 geneset in \code{engineering_params$genesets} left with no surviving
 genes after the dearseq filter is automatically dropped before
 engineering runs (with a message, if \code{verbose = TRUE}).
+
+If \code{selection_params$method = "rise"} with
+\code{selection_params$rise_paired = TRUE} is specified, \code{individual_id}
+and \code{timepoint} must also be supplied, with the same pairing
+requirement as \code{gene_level_fc}/\code{dearseq_mode = "paired"} (every
+individual has exactly one \code{timepoint = 0} and one
+\code{timepoint = 1} observation), validated by the same shared check.
+\code{timepoint} is used as the pre/post contrast for RISE screening, in
+place of \code{treatment} (which, if supplied, retains its usual role as
+an optional model predictor via \code{treatment_predictor}, decoupled from
+the RISE pairing). Rows are sorted by \code{individual_id} (then
+\code{timepoint}) before fitting, so pre- and post-treatment rows for the
+same individual are matched correctly regardless of input row order. This
+mode is not compatible with \code{engineering_params$gene_level_fc = TRUE}.
 
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and

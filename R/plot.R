@@ -168,12 +168,11 @@ plot.predictomics <- function(x,
       plot_df$highlight_value <- as.numeric(highlight)
     }
   } else if (has_treatment) {
-    # Convert binary numeric to a labelled factor for the legend
-    trt <- if (isTRUE(x$paired_rise)) {
-      x$treatment[x$treatment == 1]
-    } else {
-      x$treatment
-    }
+    # Convert binary numeric to a labelled factor for the legend. For paired
+    # RISE, x$treatment is already reordered/subset by predict_cv() to match
+    # x$observed (the post-treatment modelling rows), so no special-casing is
+    # needed here.
+    trt <- x$treatment
     if (is.numeric(trt)) {
       trt <- factor(trt, levels = c(0, 1),
                     labels = c("Control (0)", "Active (1)"))

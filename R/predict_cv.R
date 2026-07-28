@@ -63,6 +63,20 @@
 #' genes after the dearseq filter is automatically dropped before
 #' engineering runs (with a message, if \code{verbose = TRUE}).
 #'
+#' If \code{selection_params$method = "rise"} with
+#' \code{selection_params$rise_paired = TRUE} is specified, \code{individual_id}
+#' and \code{timepoint} must also be supplied, with the same pairing
+#' requirement as \code{gene_level_fc}/\code{dearseq_mode = "paired"} (every
+#' individual has exactly one \code{timepoint = 0} and one
+#' \code{timepoint = 1} observation), validated by the same shared check.
+#' \code{timepoint} is used as the pre/post contrast for RISE screening, in
+#' place of \code{treatment} (which, if supplied, retains its usual role as
+#' an optional model predictor via \code{treatment_predictor}, decoupled from
+#' the RISE pairing). Rows are sorted by \code{individual_id} (then
+#' \code{timepoint}) before fitting, so pre- and post-treatment rows for the
+#' same individual are matched correctly regardless of input row order. This
+#' mode is not compatible with \code{engineering_params$gene_level_fc = TRUE}.
+#'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
 #' selection, immediately before model fitting. Treatment is never passed
@@ -151,16 +165,20 @@
 #'   \code{engineering_params$gene_level_fc = TRUE} is used, in which case
 #'   every individual must have exactly two observations: one at
 #'   \code{timepoint = 0} (pre-treatment) and one at \code{timepoint = 1}
-#'   (post-treatment). Also required when
-#'   \code{selection_params$dearseq_mode = "paired"} is used (same pairing
-#'   requirement), and optionally used to restrict
+#'   (post-treatment). Also required when \code{selection_params$dearseq_mode
+#'   = "paired"} or \code{selection_params$rise_paired = TRUE} is used (same
+#'   pairing requirement), and optionally used to restrict
 #'   \code{selection_params$dearseq_mode = "classic"} to
 #'   \code{timepoint == 1} rows. Pass \code{NULL} (default) otherwise.
 #' @param timepoint A binary numeric vector of length n (0 = pre-treatment,
 #'   1 = post-treatment), paired with \code{individual_id}. Required when
-#'   \code{engineering_params$gene_level_fc = TRUE} or
-#'   \code{selection_params$dearseq_mode = "paired"} is used. Pass
-#'   \code{NULL} (default) otherwise.
+#'   \code{engineering_params$gene_level_fc = TRUE},
+#'   \code{selection_params$dearseq_mode = "paired"}, or
+#'   \code{selection_params$rise_paired = TRUE} is used - for the latter,
+#'   \code{timepoint} is the pre/post contrast (in place of \code{treatment})
+#'   and rows are sorted by \code{individual_id} (then \code{timepoint})
+#'   before fitting, so input row order does not matter. Pass \code{NULL}
+#'   (default) otherwise.
 #' @param verbose Logical. If \code{TRUE}, prints progress messages throughout.
 #'   Defaults to \code{TRUE}.
 #'
@@ -524,16 +542,38 @@ predict_cv <- function(Y,
   }
 
   if (is_paired_rise) {
-    .validate_paired_rise_treatment(treatment_pipeline)
+
+    # Harmonised with dearseq's paired mode: the contrast is timepoint (not
+    # treatment), individual_id is required, and the same shared validator
+    # is used.
+    .validate_individual_timepoint_pairing(
+      individual_id = individual_id,
+      timepoint     = timepoint,
+      n             = n,
+      context       = "selection_params$method = 'rise' with rise_paired = TRUE"
+    )
+
+    # Sort by individual_id (then timepoint) so that pre-treatment
+    # (timepoint == 0) and post-treatment (timepoint == 1) rows for the same
+    # individual are matched by position, regardless of input row order.
+    rise_order <- order(individual_id, timepoint)
+    X                   <- X[rise_order, , drop = FALSE]
+    Y                   <- Y[rise_order]
+    treatment_pipeline  <- if (!is.null(treatment_pipeline))
+      treatment_pipeline[rise_order] else NULL
+    covariates_pipeline <- if (!is.null(covariates_pipeline))
+      covariates_pipeline[rise_order, , drop = FALSE] else NULL
+    individual_id       <- individual_id[rise_order]
+    timepoint           <- timepoint[rise_order]
+
     message(
-      "[predictomics] Paired RISE mode detected: treatment = 1 indicates ",
-      "post-treatment and treatment = 0 indicates pre-treatment.\n",
-      "  IMPORTANT: samples must be in matched order - row i of the ",
-      "post-treatment group must correspond to row i of the pre-treatment ",
-      "group in the input data.\n",
-      "  Predictive modelling will be performed on post-treatment samples ",
-      "only (treatment == 1). Pre-treatment samples are used for RISE ",
-      "screening only and will be excluded from the CV loop."
+      "[predictomics] Paired RISE mode detected: rows are sorted by ",
+      "individual_id (then timepoint) so that pre-treatment ",
+      "(timepoint == 0) and post-treatment (timepoint == 1) rows for the ",
+      "same individual are correctly matched, regardless of input row ",
+      "order. Predictive modelling will be performed on post-treatment ",
+      "samples only (timepoint == 1); pre-treatment samples are used for ",
+      "RISE screening only and excluded from the CV loop."
     )
   }
 
@@ -591,14 +631,15 @@ predict_cv <- function(Y,
   # ---------------------------------------------------------------------------
   # Full data (both arms) is retained for passing to run_selection (RISE
   # screening uses both arms). Modelling uses post-treatment only.
-  X_processed        <- X   # initialise here for paired RISE subsetting
-  X_full             <- X_processed
-  Y_full             <- Y
-  treatment_full     <- treatment_pipeline
-  covariate_mat_full <- covariate_mat
+  X_processed         <- X   # initialise here for paired RISE subsetting
+  X_full              <- X_processed
+  Y_full              <- Y
+  treatment_full      <- treatment_pipeline
+  covariate_mat_full  <- covariate_mat
+  treatment_pipeline_post <- treatment_pipeline
 
   if (is_paired_rise) {
-    post_idx      <- which(treatment_pipeline == 1)
+    post_idx      <- which(timepoint == 1)
     X_processed   <- X_processed[post_idx, , drop = FALSE]
     Y             <- Y[post_idx]
     covariate_mat <- if (!is.null(covariate_mat))
@@ -607,6 +648,8 @@ predict_cv <- function(Y,
     treatment_mat <- if (!is.null(treatment_mat))
       treatment_mat[post_idx, , drop = FALSE]
     else NULL
+    treatment_pipeline_post <- if (!is.null(treatment_pipeline))
+      treatment_pipeline[post_idx] else NULL
     n             <- length(Y)
     folds         <- if (cv_type == "loo") n else folds
   }
@@ -643,16 +686,18 @@ predict_cv <- function(Y,
     if (!is.null(selection_params_pipeline)) {
       if (verbose) message("[predictomics] Applying feature selection outside CV loop.")
       sel_fit <- run_selection(
-        X_train    = if (is_paired_rise) X_full else X_processed,
-        Y_train    = if (is_paired_rise) Y_full else Y,
-        covariates = if (is_paired_rise) covariate_mat_full
+        X_train       = if (is_paired_rise) X_full else X_processed,
+        Y_train       = if (is_paired_rise) Y_full else Y,
+        covariates    = if (is_paired_rise) covariate_mat_full
         else covariate_mat,
-        treatment  = if (!is.null(treatment_pipeline))
+        treatment     = if (!is.null(treatment_pipeline))
           .coerce_treatment_binary(
             if (is_paired_rise) treatment_full else treatment_pipeline
           )
         else NULL,
-        params     = selection_params_pipeline
+        individual_id = individual_id,
+        timepoint     = timepoint,
+        params        = selection_params_pipeline
       )
       # Subset selected features to post-treatment X_processed for modelling
       X_processed <- X_processed[, sel_fit$selected_features, drop = FALSE]
@@ -689,7 +734,9 @@ predict_cv <- function(Y,
           X_full             = X_full,
           Y_full             = Y_full,
           treatment_full     = treatment_full,
-          covariate_mat_full = covariate_mat_full
+          covariate_mat_full = covariate_mat_full,
+          individual_id_full = individual_id,
+          timepoint_full     = timepoint
         )
       },
       future.seed = seed
@@ -727,7 +774,8 @@ predict_cv <- function(Y,
       observed                            = if (is_paired_rise) Y else Y,
       predicted                           = predictions,
       fold_ids                            = fold_ids,
-      treatment                           = treatment,
+      treatment                           = if (is_paired_rise) treatment_pipeline_post
+                                            else treatment,
       treatment_predictor                 = treatment_predictor,
       covariates                          = covariates,
       engineering_params                  = engineering_params,

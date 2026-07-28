@@ -32,7 +32,9 @@ Checks that \code{individual_id} and \code{timepoint} are supplied, have
 the correct length and type, and that every individual has exactly two
 observations, one at each timepoint (0 = pre-treatment, 1 =
 post-treatment). Called from \code{predict_cv} when
-\code{engineering_params$gene_level_fc = TRUE} is detected, and from
-\code{run_selection} for \code{selection_params$dearseq_mode = "paired"}.
+\code{engineering_params$gene_level_fc = TRUE} or
+\code{selection_params$rise_paired = TRUE} is detected, and from
+\code{run_selection} for \code{selection_params$dearseq_mode = "paired"}
+and \code{selection_params$rise_paired = TRUE}.
 }
 \keyword{internal}

@@ -20,7 +20,9 @@
   X_full = NULL,
   Y_full = NULL,
   treatment_full = NULL,
-  covariate_mat_full = NULL
+  covariate_mat_full = NULL,
+  individual_id_full = NULL,
+  timepoint_full = NULL
 )
 }
 \arguments{
@@ -44,6 +46,12 @@ lists.}
 \item{treatment_mat}{Numeric matrix of treatment columns or \code{NULL}.}
 
 \item{covariate_mat}{Numeric matrix of covariate columns or \code{NULL}.}
+
+\item{individual_id_full, timepoint_full}{Full-data (both pre/post arms)
+\code{individual_id}/\code{timepoint} vectors for paired RISE, already
+sorted by individual so that pre- and post-treatment rows for the same
+individual are matched by position. \code{NULL} unless
+\code{is_paired_rise = TRUE}.}
 }
 \value{
 A named list with:

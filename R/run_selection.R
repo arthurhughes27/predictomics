@@ -100,18 +100,22 @@
 #'   is supplied. Ignored for all other methods. Pass \code{NULL} (default)
 #'   for no covariates (intercept-only baseline).
 #' @param treatment A binary numeric vector of length n with values 0 and 1,
-#'   encoding treatment group membership. Required for \code{"rise"} and for
-#'   \code{"dearseq"} with \code{dearseq_mode = "classic"}; optionally used
-#'   to restrict rows for \code{"dearseq"} with
-#'   \code{dearseq_mode = "paired"}. Ignored for all other methods. Pass
-#'   \code{NULL} (default) if not applicable.
-#' @param individual_id Vector of length n identifying individuals. Required
-#'   for \code{"dearseq"} with \code{dearseq_mode = "paired"} (used as
-#'   \code{sample_group}); optionally used (together with \code{timepoint})
-#'   to restrict rows for \code{dearseq_mode = "classic"}. Ignored for all
+#'   encoding treatment group membership. Required for \code{"rise"} (unless
+#'   \code{rise_paired = TRUE}, in which case \code{individual_id}/
+#'   \code{timepoint} are required instead) and for \code{"dearseq"} with
+#'   \code{dearseq_mode = "classic"}; optionally used to restrict rows for
+#'   \code{"dearseq"} with \code{dearseq_mode = "paired"}. Ignored for all
 #'   other methods. Pass \code{NULL} (default) if not applicable.
+#' @param individual_id Vector of length n identifying individuals. Required
+#'   for \code{"rise"} with \code{rise_paired = TRUE} and for \code{"dearseq"}
+#'   with \code{dearseq_mode = "paired"} (used as \code{sample_group});
+#'   optionally used (together with \code{timepoint}) to restrict rows for
+#'   \code{dearseq_mode = "classic"}. Ignored for all other methods. Pass
+#'   \code{NULL} (default) if not applicable.
 #' @param timepoint A binary numeric vector of length n (0/1), paired with
-#'   \code{individual_id}. Required for \code{"dearseq"} with
+#'   \code{individual_id}. Required for \code{"rise"} with
+#'   \code{rise_paired = TRUE} (used as the pre/post contrast in place of
+#'   \code{treatment}) and for \code{"dearseq"} with
 #'   \code{dearseq_mode = "paired"}; optionally used to restrict rows for
 #'   \code{dearseq_mode = "classic"}. Ignored for all other methods. Pass
 #'   \code{NULL} (default) if not applicable.
@@ -150,7 +154,13 @@
 #'       passed as \code{alternative}. One of \code{"less"} or
 #'       \code{"two.sided"}. Defaults to \code{"two.sided"}.}
 #'     \item{\code{rise_paired}}{Logical. Whether data are paired, passed as
-#'       \code{paired}. Defaults to \code{FALSE}.}
+#'       \code{paired}. When \code{TRUE}, \code{individual_id} and
+#'       \code{timepoint} are required (in the same paired design as
+#'       \code{"dearseq"} with \code{dearseq_mode = "paired"}): the
+#'       pre/post contrast is \code{timepoint} rather than \code{treatment},
+#'       and rows are sorted by \code{individual_id} (then \code{timepoint})
+#'       to guarantee correct pairing regardless of input row order.
+#'       Defaults to \code{FALSE}.}
 #'     \item{\code{dearseq_mode}}{Character string. One of \code{"classic"}
 #'       (default) or \code{"paired"}. See Details.}
 #'     \item{\code{dearseq_level}}{Character string. One of \code{"gene"}
@@ -272,12 +282,28 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   }
 
   if (method == "rise") {
-    if (is.null(treatment))
-      stop("[predictomics] treatment must be provided for method = 'rise'.",
-           call. = FALSE)
-    if (!is.numeric(treatment) || !all(treatment %in% c(0, 1)))
-      stop("[predictomics] treatment must be a binary numeric vector (0/1) ",
-           "for method = 'rise'.", call. = FALSE)
+
+    rise_paired <- isTRUE(params$rise_paired %||% FALSE)
+
+    if (rise_paired) {
+      # Paired RISE is harmonised with dearseq's paired mode: the contrast
+      # is timepoint (not treatment), and individual_id/timepoint pairing is
+      # validated with the same shared helper.
+      .validate_individual_timepoint_pairing(
+        individual_id = individual_id,
+        timepoint     = timepoint,
+        n             = nrow(X_train),
+        context       = "selection_params$method = 'rise' with rise_paired = TRUE"
+      )
+    } else {
+      if (is.null(treatment))
+        stop("[predictomics] treatment must be provided for method = 'rise'.",
+             call. = FALSE)
+      if (!is.numeric(treatment) || !all(treatment %in% c(0, 1)))
+        stop("[predictomics] treatment must be a binary numeric vector (0/1) ",
+             "for method = 'rise'.", call. = FALSE)
+    }
+
     if (!requireNamespace("SurrogateRank", quietly = TRUE))
       stop("[predictomics] The SurrogateRank package is required for ",
            "method = 'rise'. Install it with: install.packages('SurrogateRank')",
@@ -380,6 +406,8 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                        X_train          = X_train,
                        Y_train          = Y_train,
                        treatment        = treatment,
+                       individual_id    = individual_id,
+                       timepoint        = timepoint,
                        top_n            = top_n,
                        alpha            = params$rise_alpha         %||% 0.05,
                        power_want_s     = params$rise_power_want_s,
@@ -708,7 +736,18 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
 #'
 #' @param X_train Numeric matrix. Training predictor matrix.
 #' @param Y_train Numeric vector. Training response.
-#' @param treatment Binary numeric vector (0/1). Treatment assignment.
+#' @param treatment Binary numeric vector (0/1). Treatment assignment. Used
+#'   as the contrast when \code{paired = FALSE}; ignored when
+#'   \code{paired = TRUE} (see \code{individual_id}/\code{timepoint}).
+#' @param individual_id Vector identifying individuals, or \code{NULL}.
+#'   Required when \code{paired = TRUE}: rows are sorted by
+#'   \code{individual_id} (then \code{timepoint}) before splitting into
+#'   pre/post groups, so that pre- and post-treatment rows for the same
+#'   individual are matched regardless of input row order. Ignored when
+#'   \code{paired = FALSE}.
+#' @param timepoint Binary numeric vector (0/1), or \code{NULL}. Used as the
+#'   contrast (0 = pre-treatment, 1 = post-treatment) when \code{paired =
+#'   TRUE}, in place of \code{treatment}. Ignored when \code{paired = FALSE}.
 #' @param top_n Integer or NULL. Used only to determine whether the tiebreak
 #'   note should be printed.
 #' @param alpha,power_want_s,epsilon,u_y_hyp,p_correction,n_cores,alternative,paired
@@ -719,28 +758,47 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
 # -----------------------------------------------------------------------------
 .compute_rise_scores <- function(X_train, Y_train, treatment, top_n,
                                  alpha, power_want_s, epsilon, u_y_hyp,
-                                 p_correction, n_cores, alternative, paired) {
-
-  # Emit pairing order note when paired = TRUE
-  if (isTRUE(paired)) {
-    message(
-      "[predictomics] RISE paired mode: assuming samples are in matched ",
-      "pre/post order - row i of the pre-treatment group (treatment == 0) ",
-      "corresponds to row i of the post-treatment group (treatment == 1). ",
-      "Ensure this ordering is correct before proceeding."
-    )
-  }
+                                 p_correction, n_cores, alternative, paired,
+                                 individual_id = NULL, timepoint = NULL) {
 
   # ---------------------------------------------------------------------------
   # 1. Reshape inputs into RISE format
   # ---------------------------------------------------------------------------
-  idx1  <- which(treatment == 1)
-  idx0  <- which(treatment == 0)
+  if (isTRUE(paired)) {
 
-  yone  <- Y_train[idx1]
-  yzero <- Y_train[idx0]
-  sone  <- X_train[idx1, , drop = FALSE]
-  szero <- X_train[idx0, , drop = FALSE]
+    # Sort by individual_id (then timepoint) so that pre-treatment
+    # (timepoint == 0) and post-treatment (timepoint == 1) rows for the same
+    # individual are matched by position, regardless of input row order.
+    message(
+      "[predictomics] RISE paired mode: rows are sorted by individual_id ",
+      "(then timepoint) so that pre-treatment (timepoint == 0) and ",
+      "post-treatment (timepoint == 1) rows for the same individual are ",
+      "correctly matched, regardless of input row order."
+    )
+
+    ord       <- order(individual_id, timepoint)
+    Y_ordered <- Y_train[ord]
+    X_ordered <- X_train[ord, , drop = FALSE]
+    tp_ordered <- timepoint[ord]
+
+    idx1  <- which(tp_ordered == 1)
+    idx0  <- which(tp_ordered == 0)
+
+    yone  <- Y_ordered[idx1]
+    yzero <- Y_ordered[idx0]
+    sone  <- X_ordered[idx1, , drop = FALSE]
+    szero <- X_ordered[idx0, , drop = FALSE]
+
+  } else {
+
+    idx1  <- which(treatment == 1)
+    idx0  <- which(treatment == 0)
+
+    yone  <- Y_train[idx1]
+    yzero <- Y_train[idx0]
+    sone  <- X_train[idx1, , drop = FALSE]
+    szero <- X_train[idx0, , drop = FALSE]
+  }
 
   # ---------------------------------------------------------------------------
   # 2. Call rise.screen(), suppressing its internal plot and verbose output
