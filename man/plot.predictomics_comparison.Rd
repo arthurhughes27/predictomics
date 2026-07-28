@@ -17,7 +17,8 @@
 \item{sort}{Logical. If \code{TRUE}, pipelines are ordered by the plotted
 metric (or by \code{x$metric} when \code{metric = "all"}). Defaults to
 \code{FALSE}, keeping the order in which pipelines were supplied
-(Baseline, Reference, then the \code{K} options in order).}
+(Reference, then the \code{K} options in order; the Baseline is always
+shown as a line rather than a bar).}
 
 \item{...}{Additional arguments passed to \code{ggplot2::theme}.}
 }
@@ -25,15 +26,19 @@ metric (or by \code{x$metric} when \code{metric = "all"}). Defaults to
 A \code{ggplot} object.
 }
 \description{
-Produces a grouped bar chart comparing the baseline, reference, and option
+Produces a grouped bar chart comparing the reference and alternative
 pipelines fit by \code{\link{compare_pipelines}} on one or all performance
-metrics.
+metrics, against the baseline shown as a dashed reference line.
 }
 \details{
-Bars are coloured by pipeline role (baseline, reference, option), and a
-dashed horizontal reference line marks the baseline's value for the
-plotted metric(s). When \code{metric = "all"}, the four metrics are shown
-as facets.
+The Reference and Alternative pipelines are shown as coloured bars; the
+Baseline is shown instead as a dashed horizontal line (both are part of a
+single "Pipelines" legend) annotated with its metric value at the right of
+the panel. The best-performing bar (lowest \code{RMSE}/\code{sRMSE}, or
+highest \code{R2}/\code{SpearmanR}) is outlined in black, without altering
+its fill colour, so the "Pipelines" legend remains accurate. When
+\code{metric = "all"}, the four metrics are shown as facets, each with its
+own best-bar outline and baseline annotation.
 }
 \seealso{
 \code{\link{compare_pipelines}},

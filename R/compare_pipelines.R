@@ -570,15 +570,19 @@ print.predictomics_comparison <- function(x, digits = 4, ...) {
 #' Plot a predictomics_comparison object
 #'
 #' @description
-#' Produces a grouped bar chart comparing the baseline, reference, and option
+#' Produces a grouped bar chart comparing the reference and alternative
 #' pipelines fit by \code{\link{compare_pipelines}} on one or all performance
-#' metrics.
+#' metrics, against the baseline shown as a dashed reference line.
 #'
 #' @details
-#' Bars are coloured by pipeline role (baseline, reference, option), and a
-#' dashed horizontal reference line marks the baseline's value for the
-#' plotted metric(s). When \code{metric = "all"}, the four metrics are shown
-#' as facets.
+#' The Reference and Alternative pipelines are shown as coloured bars; the
+#' Baseline is shown instead as a dashed horizontal line (both are part of a
+#' single "Pipelines" legend) annotated with its metric value at the right of
+#' the panel. The best-performing bar (lowest \code{RMSE}/\code{sRMSE}, or
+#' highest \code{R2}/\code{SpearmanR}) is outlined in black, without altering
+#' its fill colour, so the "Pipelines" legend remains accurate. When
+#' \code{metric = "all"}, the four metrics are shown as facets, each with its
+#' own best-bar outline and baseline annotation.
 #'
 #' @param x A \code{predictomics_comparison} object returned by
 #'   \code{\link{compare_pipelines}}.
@@ -588,7 +592,8 @@ print.predictomics_comparison <- function(x, digits = 4, ...) {
 #' @param sort Logical. If \code{TRUE}, pipelines are ordered by the plotted
 #'   metric (or by \code{x$metric} when \code{metric = "all"}). Defaults to
 #'   \code{FALSE}, keeping the order in which pipelines were supplied
-#'   (Baseline, Reference, then the \code{K} options in order).
+#'   (Reference, then the \code{K} options in order; the Baseline is always
+#'   shown as a line rather than a bar).
 #' @param ... Additional arguments passed to \code{ggplot2::theme}.
 #'
 #' @return A \code{ggplot} object.
@@ -613,7 +618,7 @@ plot.predictomics_comparison <- function(x,
 
   res <- x$results
   res$role <- factor(res$role, levels = c("baseline", "reference", "option"),
-                     labels = c("Baseline", "Reference", "Option"))
+                     labels = c("Baseline", "Reference", "Alternative"))
 
   sort_metric <- if (metric == "all") x$metric else metric
 
@@ -624,14 +629,21 @@ plot.predictomics_comparison <- function(x,
     res$pipeline <- factor(res$pipeline, levels = res$pipeline)
   }
 
-  baseline_row  <- res[res$role == "Baseline", , drop = FALSE]
-  option_label  <- .option_type_label(x$option_type)
-  title_text    <- paste0("Pipeline comparison: ", option_label)
+  baseline_row <- res[res$role == "Baseline", , drop = FALSE]
+  bars_res     <- res[res$role != "Baseline", , drop = FALSE]
+  bars_res$role <- droplevels(bars_res$role)
+  bars_res$pipeline <- droplevels(bars_res$pipeline)
+
+  option_label <- .option_type_label(x$option_type)
+  title_text   <- paste0("Pipeline comparison: ", option_label)
+
+  pipeline_colours <- c(Reference = "#FC8D62", Alternative = "#8DA0CB")
+  bar_width        <- 0.7
 
   if (metric == "all") {
 
     plot_df <- tidyr::pivot_longer(
-      res,
+      bars_res,
       cols      = c("RMSE", "sRMSE", "R2", "SpearmanR"),
       names_to  = "metric",
       values_to = "value"
@@ -645,53 +657,91 @@ plot.predictomics_comparison <- function(x,
       value  = c(baseline_row$RMSE, baseline_row$sRMSE,
                 baseline_row$R2, baseline_row$SpearmanR)
     )
+    ref_lines$label <- paste0("Baseline: ", round(ref_lines$value, 3))
+
+    best_df <- do.call(rbind, lapply(levels(plot_df$metric), function(m) {
+      sub           <- plot_df[plot_df$metric == m, , drop = FALSE]
+      higher_better <- m %in% c("R2", "SpearmanR")
+      sub[which.max(if (higher_better) sub$value else -sub$value), , drop = FALSE]
+    }))
 
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = pipeline, y = value,
                                                fill = role)) +
-      ggplot2::geom_col(alpha = 0.85, width = 0.7) +
+      ggplot2::geom_col(alpha = 0.9, width = bar_width) +
+      ggplot2::geom_col(
+        data = best_df, colour = "black", fill = NA,
+        linewidth = 0.9, width = bar_width
+      ) +
       ggplot2::geom_hline(
-        data      = ref_lines,
-        ggplot2::aes(yintercept = value),
-        linetype  = "dashed", colour = "grey40", linewidth = 0.5
+        data        = ref_lines,
+        ggplot2::aes(yintercept = value, linetype = "Baseline"),
+        colour      = "grey40", linewidth = 0.6, inherit.aes = FALSE
+      ) +
+      ggplot2::geom_text(
+        data        = ref_lines,
+        ggplot2::aes(x = Inf, y = value, label = label),
+        hjust = 1.05, vjust = -0.5, size = 2.8, colour = "grey40",
+        inherit.aes = FALSE
       ) +
       ggplot2::facet_wrap(~metric, scales = "free_y") +
+      ggplot2::scale_linetype_manual(name = "Pipelines",
+                                     values = c(Baseline = "dashed")) +
       ggplot2::labs(
-        x        = "Pipeline specification", y = NULL, fill = NULL,
+        x        = "Pipeline specification", y = NULL, fill = "Pipelines",
         title    = title_text
       )
 
   } else {
 
-    plot_df <- res
-    plot_df$metric_value <- res[[metric]]
+    plot_df <- bars_res
+    plot_df$metric_value <- bars_res[[metric]]
+
+    higher_better <- metric %in% c("R2", "SpearmanR")
+    best_df <- plot_df[which.max(if (higher_better) plot_df$metric_value
+                                 else -plot_df$metric_value), , drop = FALSE]
+
+    baseline_value <- baseline_row[[metric]]
+    baseline_label <- paste0("Baseline: ", round(baseline_value, 3))
+    baseline_df    <- data.frame(value = baseline_value)
 
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = pipeline, y = metric_value,
                                                fill = role)) +
-      ggplot2::geom_col(alpha = 0.85, width = 0.7) +
+      ggplot2::geom_col(alpha = 0.9, width = bar_width) +
+      ggplot2::geom_col(
+        data = best_df, colour = "black", fill = NA,
+        linewidth = 0.9, width = bar_width
+      ) +
       ggplot2::geom_hline(
-        yintercept = baseline_row[[metric]],
-        linetype   = "dashed", colour = "grey40", linewidth = 0.5
+        data        = baseline_df,
+        ggplot2::aes(yintercept = value, linetype = "Baseline"),
+        colour      = "grey40", linewidth = 0.6, inherit.aes = FALSE
+      ) +
+      ggplot2::annotate(
+        "text", x = Inf, y = baseline_value, label = baseline_label,
+        hjust = 1.05, vjust = -0.6, size = 3, colour = "grey40"
       ) +
       ggplot2::geom_text(
         ggplot2::aes(label = round(metric_value, 3)),
         vjust = -0.4, size = 3, colour = "grey20"
       ) +
+      ggplot2::scale_linetype_manual(name = "Pipelines",
+                                     values = c(Baseline = "dashed")) +
       ggplot2::labs(
-        x        = "Pipeline specification", y = metric, fill = NULL,
+        x        = "Pipeline specification", y = metric, fill = "Pipelines",
         title    = title_text,
         subtitle = paste0("metric: ", metric)
       )
   }
 
   p <- p +
-    ggplot2::scale_fill_brewer(palette = "Set2") +
+    ggplot2::scale_fill_manual(values = pipeline_colours) +
     ggplot2::theme_bw() +
     ggplot2::theme(
-      plot.title       = ggplot2::element_text(face = "bold", size = 12),
-      plot.subtitle    = ggplot2::element_text(colour = "grey40", size = 10),
-      axis.title       = ggplot2::element_text(size = 11),
+      plot.title       = ggplot2::element_text(face = "bold", size = 16),
+      plot.subtitle    = ggplot2::element_text(colour = "grey40", size = 12),
+      axis.title       = ggplot2::element_text(size = 13, face = "bold"),
       axis.text.x      = ggplot2::element_text(angle = 45, hjust = 1, size = 9),
-      axis.text.y      = ggplot2::element_text(size = 10),
+      axis.text.y      = ggplot2::element_text(size = 9),
       panel.grid.minor = ggplot2::element_blank(),
       legend.position  = "right",
       ...
