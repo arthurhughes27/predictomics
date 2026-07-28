@@ -1,6 +1,6 @@
 # predictomics <img src="predictomics_hex.png" align="right" width="180" />
 
-R package providing a standardised interface for prediction tasks in omics (e.g. transcriptomics) data. This package wraps the typical steps in predictive analyses with high-dimensional data (feature engineering, feature selection, model fitting, tuning, principled cross-validation) into a consistent, well-documented pipeline, so that different analysis choices can be swapped in and compared easily.
+R package providing a standardised interface for prediction tasks in omics data. This package wraps the typical steps in predictive analyses with high-dimensional data (feature engineering, feature selection, model fitting, tuning, principled cross-validation) into a consistent, well-documented pipeline, so that different analysis choices can be swapped in and compared easily.
 
 The core function is `predict_cv()`, a single cross-validated pipeline covering three stages, each swappable independently:
 
