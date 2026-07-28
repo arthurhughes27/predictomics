@@ -29,8 +29,8 @@
 
 \item{genesets}{Named list of character vectors of feature names.}
 
-\item{agg_method}{Character string. One of "mean", "median", "sum", "pc1",
-"ssgsea", "gsva".}
+\item{agg_method}{Character string. One of "mean", "median", "sum", "max",
+"pc1", "ssgsea", "gsva".}
 
 \item{feature_names}{Character vector of column names of \code{X}.}
 

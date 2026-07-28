@@ -256,9 +256,9 @@
 
     agg_method <- params$agg_method
     if (is.null(agg_method) ||
-        !agg_method %in% c("mean", "median", "sum", "pc1", "ssgsea", "gsva"))
+        !agg_method %in% c("mean", "median", "sum", "max", "pc1", "ssgsea", "gsva"))
       stop("[predictomics] engineering_params$agg_method must be one of ",
-           "'mean', 'median', 'sum', 'pc1', 'ssgsea', or 'gsva' when ",
+           "'mean', 'median', 'sum', 'max', 'pc1', 'ssgsea', or 'gsva' when ",
            "genesets are provided.", call. = FALSE)
 
     if (identical(agg_method, "ssgsea")) {
