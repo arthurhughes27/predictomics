@@ -74,9 +74,11 @@ instead of \code{treatment} (if any), and any treatment colouring is
 overridden entirely. For \code{highlight_type = "categorical"}, a discrete
 colour scale adapted to the number of levels is used - \code{RColorBrewer}
 \code{"Set2"} for up to 8 levels, or \code{viridis} (discrete) beyond that
-- with a legend showing each level. For \code{highlight_type =
+\itemize{
+\item with a legend showing each level. For \code{highlight_type =
 "continuous"}, a \code{viridis} colour gradient is used, with a continuous
 colourbar legend.
+}
 
 When \code{highlight} is absent and \code{treatment} is present, a
 colorblind-friendly palette from \code{RColorBrewer} (\code{"Set2"}) is

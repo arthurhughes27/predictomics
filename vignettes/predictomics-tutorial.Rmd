@@ -19,8 +19,7 @@ This tutorial gives a brief tour of the two main entry points in
 **predictomics**: `predict_cv()`, which fits a single cross-validated
 prediction pipeline, and `compare_pipelines()`, which benchmarks several
 pipeline choices against a baseline and a reference model. All examples use
-simulated data from `simulate_predictomics_data()`, which ships with the
-package so you can regenerate (or tweak) it at any time - see `?simulate_predictomics_data`.
+simulated data from the internal function `simulate_predictomics_data()`.
 
 ```{r setup}
 library(predictomics)
@@ -78,6 +77,13 @@ result_pearson <- predict_cv(
 result_pearson
 ```
 
+The results are much better with the within-loop feature selection reducing the dimension prior to modelling. 
+
+```{r}
+plot(result_pearson)
+```
+
+
 `plot_selection_stability()` shows how consistently each feature is selected
 across the outer CV folds - a stable, informative filter should repeatedly
 pick genes belonging to the true signal genesets:
@@ -90,19 +96,22 @@ plot_selection_stability(result_pearson, plot_type = "frequency", top_n = 15)
 
 `engineering_params` can collapse genes into geneset-level scores before
 selection/modelling - useful for interpretability and for reducing
-dimensionality upfront. Here we aggregate by geneset mean, then select the
-most predictive genesets:
+dimensionality upfront. Here we aggregate by geneset mean using the `agg_method` argument, then select the
+top 3 most predictive genesets within each fold. Additionally, we apply a pre-transformation (z-score) to the gene-level features prior to this transformation using the `col_transform` argument. 
 
 ```{r}
 result_geneset <- predict_cv(
   Y = d$Y, X = d$X,
-  engineering_params = list(method = "engineer", col_transform = "none",
+  engineering_params = list(method = "engineer", col_transform = "z",
                             genesets = d$genesets, agg_method = "mean"),
   selection_params   = list(method = "pearson", top_n = 3),
   folds   = 5,
   verbose = FALSE
 )
 result_geneset
+```
+```{r}
+plot(result_geneset)
 ```
 
 ## 5. Model choice, treatment, and covariates
@@ -124,17 +133,28 @@ result_glmnet <- predict_cv(
   verbose = FALSE
 )
 result_glmnet
+```
 
-# Colour the observed-vs-predicted plot by an arbitrary variable
+Let's take the opportunity to show off how we can highlight these results by covariates, controlled via the `highlight` argument in `plot()`, to examine patterns in the predictions. For a continuous covariate, we specify `highlight_type = "continuous"`. 
+```{r}
+# Colour the observed-vs-predicted plot by age
 plot(result_glmnet, highlight = d$covariates$age, highlight_type = "continuous",
     highlight_label = "Age")
 ```
+
+And for a categorical covariate, we specify `highlight_type = "categorical"`.
+
+```{r}
+plot(result_glmnet, highlight = d$covariates$sex, highlight_type = "categorical",
+    highlight_label = "Sex")
+```
+
 
 ## 6. Baseline model
 
 Passing `X = NULL` fits a **baseline model** using only `covariates`/
 `treatment` (or, absent those, the training-fold mean of `Y`) - a built-in
-null comparator for judging whether the gene expression data adds anything:
+null comparator for judging whether the high-dimensional predictors add anything:
 
 ```{r}
 result_baseline <- predict_cv(
@@ -149,10 +169,10 @@ result_baseline
 ## 7. Comparing pipelines with `compare_pipelines()`
 
 Rather than calling `predict_cv()` repeatedly by hand, `compare_pipelines()`
-fits a baseline, a reference pipeline, and a set of alternative pipelines that
+fits a baseline pipeline, a reference pipeline, and a set of alternative pipelines that
 vary exactly one stage (`option_type`: `"selection"`, `"engineering"`, or
-`"model"`), in one call. Here we compare three filtration methods against a
-Pearson-filtered `glmnet` reference:
+`"model"`), in one call. Here we compare three variable selection methods against
+the Pearson-correlation selection method we saw previously:
 
 ```{r}
 cmp <- compare_pipelines(
@@ -171,38 +191,14 @@ cmp <- compare_pipelines(
   verbose    = FALSE
 )
 cmp
-plot(cmp)
+plot(cmp, metric = "R2")
 ```
 
 The bars show the Reference and each Alternative pipeline; the dashed line
-marks the Baseline; the hatched bar marks the best-performing pipeline.
+marks the Baseline (i.e. covariate-only model); the hatched bar marks the best-performing pipeline.
 
-## 8. Paired pre/post designs
+We see that all approaches perform better than the baseline, but the variance-based feature selection performs the best, better than the reference (Pearson) and Spearman approaches. 
 
-For repeated-measures studies (e.g. pre/post vaccination), pass a
-`design = "paired"` dataset - `individual_id` and `timepoint` (0 = pre,
-1 = post) unlock `engineering_params$gene_level_fc` (fold-change features),
-`selection_params$dearseq_mode = "paired"` (differential expression, requires
-the `dearseq` package), and `selection_params$rise_paired` (requires
-`SurrogateRank`):
-
-```{r}
-d_paired <- simulate_predictomics_data(n = 40, p = 200, design = "paired", seed = 2)
-
-result_fc <- predict_cv(
-  Y = d_paired$Y, X = d_paired$X,
-  engineering_params = list(method = "engineer", gene_level_fc = TRUE),
-  selection_params   = list(method = "pearson", top_n = 20),
-  individual_id      = d_paired$individual_id,
-  timepoint          = d_paired$timepoint,
-  folds   = 5,
-  verbose = FALSE
-)
-result_fc
-```
-
-See `?predict_cv` for full details on `dearseq`- and RISE-based differential
-expression selection.
 
 ## Session info
 
