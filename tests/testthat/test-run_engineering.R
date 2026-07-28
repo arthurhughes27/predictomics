@@ -218,3 +218,44 @@ test_that("gsva errors informatively when a geneset has no overlapping features"
     "setC"
   )
 })
+
+# -----------------------------------------------------------------------------
+# max aggregation
+# -----------------------------------------------------------------------------
+
+test_that("engineering_params$agg_method = 'max' is a valid option", {
+  d <- .make_ssgsea_data()
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "max")
+  expect_error(.validate_engineering_params(params), NA)
+})
+
+test_that("run_engineering computes the row-wise max within each geneset", {
+  d <- .make_ssgsea_data()
+
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "max")
+  fit <- run_engineering(X_train = d$X, params = params)
+
+  expect_equal(dim(fit$X_transformed), c(nrow(d$X), length(d$genesets)))
+  expect_equal(colnames(fit$X_transformed), names(d$genesets))
+  expect_equal(fit$X_transformed[, "setA"],
+              apply(d$X[, d$genesets$setA], 1, max), ignore_attr = TRUE)
+  expect_equal(fit$X_transformed[, "setB"],
+              apply(d$X[, d$genesets$setB], 1, max), ignore_attr = TRUE)
+})
+
+test_that("predict_engineering recomputes the max on new data", {
+  d      <- .make_ssgsea_data(n = 20, seed = 1)
+  d_test <- .make_ssgsea_data(n = 8, seed = 2)
+
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "max")
+  fit <- run_engineering(X_train = d$X, params = params)
+
+  X_test_transformed <- predict_engineering(fit$fit, X_new = d_test$X)
+
+  expect_equal(dim(X_test_transformed), c(nrow(d_test$X), length(d$genesets)))
+  expect_equal(X_test_transformed[, "setA"],
+              apply(d_test$X[, d$genesets$setA], 1, max), ignore_attr = TRUE)
+})

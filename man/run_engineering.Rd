@@ -25,8 +25,8 @@ present in any geneset are discarded. Pass \code{NULL} to skip
 geneset aggregation.}
 \item{\code{agg_method}}{Character string. Aggregation method to apply
 within each geneset. One of \code{"mean"}, \code{"median"},
-\code{"sum"}, \code{"pc1"}, \code{"ssgsea"}, or \code{"gsva"}.
-Required when \code{genesets} is not \code{NULL}.}
+\code{"sum"}, \code{"max"}, \code{"pc1"}, \code{"ssgsea"}, or
+\code{"gsva"}. Required when \code{genesets} is not \code{NULL}.}
 \item{\code{ssgsea_alpha}}{Numeric. The exponent weight applied to the
 running-sum statistic in ssGSEA. Defaults to \code{0.25}. Only used
 when \code{agg_method = "ssgsea"}.}
@@ -107,6 +107,8 @@ transformed) output of Step 1. Supported aggregation methods:
 \item \code{"mean"}: mean expression across geneset members.
 \item \code{"median"}: median expression across geneset members.
 \item \code{"sum"}: sum of expression across geneset members.
+\item \code{"max"}: maximum expression across geneset members, computed
+per sample (i.e. row-wise).
 \item \code{"pc1"}: first principal component of the geneset members,
 computed by PCA on the training samples. The feature loadings are stored
 and applied to the test set via \code{\link{predict_engineering}}.

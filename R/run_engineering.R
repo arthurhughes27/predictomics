@@ -5,7 +5,7 @@
 # Implements two sequential steps:
 #   1. Column-wise transformation of individual features (z-score or none).
 #   2. Geneset aggregation: summarising groups of features into single values
-#      (mean, median, sum, or pc1).
+#      (mean, median, sum, max, or pc1).
 #
 # Step 1 always precedes step 2. Both steps store the parameters fitted on
 # the training set so that they can be applied to the test set without
@@ -43,6 +43,8 @@
 #'   \item \code{"mean"}: mean expression across geneset members.
 #'   \item \code{"median"}: median expression across geneset members.
 #'   \item \code{"sum"}: sum of expression across geneset members.
+#'   \item \code{"max"}: maximum expression across geneset members, computed
+#'     per sample (i.e. row-wise).
 #'   \item \code{"pc1"}: first principal component of the geneset members,
 #'     computed by PCA on the training samples. The feature loadings are stored
 #'     and applied to the test set via \code{\link{predict_engineering}}.
@@ -90,8 +92,8 @@
 #'       geneset aggregation.}
 #'     \item{\code{agg_method}}{Character string. Aggregation method to apply
 #'       within each geneset. One of \code{"mean"}, \code{"median"},
-#'       \code{"sum"}, \code{"pc1"}, \code{"ssgsea"}, or \code{"gsva"}.
-#'       Required when \code{genesets} is not \code{NULL}.}
+#'       \code{"sum"}, \code{"max"}, \code{"pc1"}, \code{"ssgsea"}, or
+#'       \code{"gsva"}. Required when \code{genesets} is not \code{NULL}.}
 #'     \item{\code{ssgsea_alpha}}{Numeric. The exponent weight applied to the
 #'       running-sum statistic in ssGSEA. Defaults to \code{0.25}. Only used
 #'       when \code{agg_method = "ssgsea"}.}
@@ -382,8 +384,8 @@ predict_engineering <- function(fit, X_new) {
 #'
 #' @param X Numeric matrix post column-wise transformation.
 #' @param genesets Named list of character vectors of feature names.
-#' @param agg_method Character string. One of "mean", "median", "sum", "pc1",
-#'   "ssgsea", "gsva".
+#' @param agg_method Character string. One of "mean", "median", "sum", "max",
+#'   "pc1", "ssgsea", "gsva".
 #' @param feature_names Character vector of column names of \code{X}.
 #' @param is_train Logical. If \code{TRUE}, PC1 loadings are fitted from
 #'   \code{X}. If \code{FALSE}, \code{pc1_loadings} must be supplied. Ignored
@@ -474,7 +476,8 @@ predict_engineering <- function(fit, X_new) {
       X_agg[, i] <- switch(agg_method,
                            mean   = rowMeans(X_sub),
                            median = apply(X_sub, 1, median),
-                           sum    = rowSums(X_sub)
+                           sum    = rowSums(X_sub),
+                           max    = apply(X_sub, 1, max)
       )
     }
   }
