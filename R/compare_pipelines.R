@@ -65,6 +65,15 @@
 #' that pipeline is excluded from the returned results; the remaining
 #' pipelines are still attempted.
 #'
+#' **Message suppression**: every \code{\link{predict_cv}} call is wrapped in
+#' \code{suppressMessages()}, so none of \code{predict_cv}'s own progress or
+#' diagnostic messages (e.g. the double-selection note when both an explicit
+#' selection method and an embedded selection model are specified) are ever
+#' shown, regardless of its internal \code{verbose} gating. Only
+#' \code{compare_pipelines()}'s own messages (\code{"Fitting pipeline: ..."},
+#' gated by this function's \code{verbose} argument, and pipeline-failure
+#' notices, always shown) are printed.
+#'
 #' **Same-class option labelling**: when \code{option_choices} is unnamed,
 #' or contains blank/duplicate names, labels are generated from each choice's
 #' \code{method} element. If multiple choices share the same method (e.g.
@@ -305,7 +314,7 @@ compare_pipelines <- function(Y,
       pass_individual_id <- if (spec$uses_gene_level_fc) individual_id else NULL
       pass_timepoint      <- if (spec$uses_gene_level_fc) timepoint else NULL
 
-      predict_cv(
+      suppressMessages(predict_cv(
         Y                   = data$Y,
         X                   = if (spec$use_X) data$X else NULL,
         cv_type             = cv_type,
@@ -321,7 +330,7 @@ compare_pipelines <- function(Y,
         individual_id       = pass_individual_id,
         timepoint           = pass_timepoint,
         verbose             = FALSE
-      )
+      ))
 
     }, error = function(e) {
       message("[predictomics] Pipeline '", lbl, "' failed and was excluded ",
