@@ -173,16 +173,17 @@
 #'       to \code{dear_seq()} as \code{bw}. Defaults to \code{"nrd"}.}
 #'     \item{\code{dearseq_kernel}}{Character string. Passed to
 #'       \code{dear_seq()} as \code{kernel}. Defaults to \code{"gaussian"}.}
-#'     \item{\code{metric}}{Character string. Metric used to evaluate
-#'       prediction quality in \code{"relative_gain"}. One of \code{"rmse"},
+#'     \item{\code{relative_gain_metric}}{Character string. Metric used to
+#'       evaluate prediction quality. Only applicable to
+#'       \code{method = "relative_gain"}. One of \code{"rmse"},
 #'       \code{"srmse"}, \code{"r2"}, or \code{"spearman"}. Defaults to
 #'       \code{"rmse"}. Ignored for other methods.}
-#'     \item{\code{inner_folds}}{Positive integer. Number of inner CV folds
-#'       for \code{"relative_gain"}. Defaults to \code{5}. Ignored for other
-#'       methods.}
-#'     \item{\code{seed}}{Integer. Random seed for inner fold assignment in
-#'       \code{"relative_gain"}. Defaults to \code{12345}. Ignored for other
-#'       methods.}
+#'     \item{\code{relative_gain_inner_folds}}{Positive integer. Number of
+#'       inner CV folds. Only applicable to \code{method = "relative_gain"}.
+#'       Defaults to \code{5}. Ignored for other methods.}
+#'     \item{\code{relative_gain_seed}}{Integer. Random seed for inner fold
+#'       assignment. Only applicable to \code{method = "relative_gain"}.
+#'       Defaults to \code{12345}. Ignored for other methods.}
 #'   }
 #'
 #' @return A named list containing:
@@ -220,13 +221,15 @@
 #' # Relative gain: retain features with positive gain over null model
 #' result <- run_selection(X, Y,
 #'   params = list(method = "relative_gain", threshold = 0,
-#'                 metric = "rmse", inner_folds = 5))
+#'                 relative_gain_metric = "rmse",
+#'                 relative_gain_inner_folds = 5))
 #'
 #' # Relative gain with covariates
 #' covariates <- matrix(rnorm(40 * 2), nrow = 40,
 #'                      dimnames = list(NULL, c("age", "sex")))
 #' result <- run_selection(X, Y, covariates = covariates,
-#'   params = list(method = "relative_gain", threshold = 0, metric = "r2"))
+#'   params = list(method = "relative_gain", threshold = 0,
+#'                 relative_gain_metric = "r2"))
 #' }
 #'
 #' @export
@@ -342,9 +345,9 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
                        X_train      = X_train,
                        Y_train      = Y_train,
                        covariates   = covariates,
-                       metric       = params$metric       %||% "rmse",
-                       inner_folds  = params$inner_folds  %||% 5L,
-                       seed         = params$seed         %||% 12345L
+                       metric       = params$relative_gain_metric       %||% "rmse",
+                       inner_folds  = params$relative_gain_inner_folds  %||% 5L,
+                       seed         = params$relative_gain_seed         %||% 12345L
                      )
                    },
 
