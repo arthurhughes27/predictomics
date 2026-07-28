@@ -59,7 +59,11 @@ elements:
 \code{"rise"}, or \code{"dearseq"}. Required.}
 \item{\code{top_n}}{Positive integer. Number of top-ranked features to
 retain. Takes precedence over \code{threshold} if both are supplied.
-Either \code{top_n} or \code{threshold} must be specified.}
+Either \code{top_n} or \code{threshold} must be specified. If
+\code{top_n} is greater than or equal to the number of available
+features (or genesets, for \code{dearseq_level = "geneset"}), all of
+them are selected and a message is printed; selection scores are not
+computed in this case (see Details).}
 \item{\code{threshold}}{Numeric. Minimum score a feature must achieve
 to be retained. Used only when \code{top_n} is \code{NULL}. For
 \code{"variance"}, a minimum variance; for \code{"pearson"} and
@@ -151,9 +155,13 @@ not geneset names.}
 \emph{all} features, in decreasing order. For
 \code{"relative_gain"}, scores are the gain values. For
 \code{"dearseq"} with \code{dearseq_level = "geneset"}, this is
-indexed by geneset name (not gene name).}
+indexed by geneset name (not gene name). All \code{NA} when
+\code{top_n} exceeded (or equalled) the number of available
+features/genesets, since scores are not computed in that case.}
 \item{\code{top_n}}{Integer or \code{NULL}. The \code{top_n} value
-used after resolving precedence with \code{threshold}.}
+used after resolving precedence with \code{threshold} - capped to
+the number of available features/genesets if it exceeded that
+count.}
 \item{\code{threshold}}{Numeric or \code{NULL}. The \code{threshold}
 value used, or \code{NULL} if \code{top_n} was applied.}
 }
@@ -165,6 +173,18 @@ the top \code{top_n} features or all features whose score meets
 \code{threshold}. If both are supplied, \code{top_n} takes precedence.
 }
 \details{
+If \code{top_n} is greater than or equal to the number of available
+features (\code{ncol(X_train)}, or the number of \code{genesets} for
+\code{method = "dearseq"} with \code{dearseq_level = "geneset"}), every
+feature (or geneset) is selected and a message is printed - selection
+scores are \strong{not} computed in this case, since every candidate would
+be selected regardless of its score. This is checked before any scoring
+computation begins, so no method-specific computation (e.g. inner-CV
+folds for \code{"relative_gain"}, or an external call for \code{"rise"}/
+\code{"dearseq"}) is performed when it would have no effect on the
+selection outcome. \code{selection_scores} is a vector of \code{NA} in
+this case.
+
 Five filter methods are supported:
 \itemize{
 \item \code{"variance"}: features are ranked by their variance across
