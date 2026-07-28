@@ -420,22 +420,16 @@
     stop("[predictomics] selection_params must specify at least one of ",
          "'top_n' or 'threshold'.", call. = FALSE)
 
-  # For dearseq geneset-level selection, top_n counts genesets, not gene
-  # columns of X_train.
-  is_dearseq_geneset <- identical(params$method, "dearseq") &&
-    identical(params$dearseq_level %||% "gene", "geneset") &&
-    !is.null(params$genesets)
-  effective_p <- if (is_dearseq_geneset) length(params$genesets) else p
-  unit        <- if (is_dearseq_geneset) "genesets" else "features"
-
   if (!is.null(top_n)) {
     if (!is.numeric(top_n) || length(top_n) != 1L ||
         top_n != as.integer(top_n) || top_n < 1L)
       stop("[predictomics] selection_params$top_n must be a positive integer.",
            call. = FALSE)
-    if (top_n > effective_p)
-      stop("[predictomics] selection_params$top_n (", top_n, ") exceeds the ",
-           "number of available ", unit, " (", effective_p, ").", call. = FALSE)
+    # Note: top_n is not checked against the number of available features/
+    # genesets here - run_selection() handles top_n >= available count by
+    # selecting everything (with a message), rather than erroring, since the
+    # actual available count also depends on dearseq geneset-to-feature
+    # overlap that isn't known until X_train is available.
   }
 
   if (!is.null(threshold)) {

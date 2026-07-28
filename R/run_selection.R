@@ -28,6 +28,18 @@
 #' \code{threshold}. If both are supplied, \code{top_n} takes precedence.
 #'
 #' @details
+#' If \code{top_n} is greater than or equal to the number of available
+#' features (\code{ncol(X_train)}, or the number of \code{genesets} for
+#' \code{method = "dearseq"} with \code{dearseq_level = "geneset"}), every
+#' feature (or geneset) is selected and a message is printed - selection
+#' scores are \strong{not} computed in this case, since every candidate would
+#' be selected regardless of its score. This is checked before any scoring
+#' computation begins, so no method-specific computation (e.g. inner-CV
+#' folds for \code{"relative_gain"}, or an external call for \code{"rise"}/
+#' \code{"dearseq"}) is performed when it would have no effect on the
+#' selection outcome. \code{selection_scores} is a vector of \code{NA} in
+#' this case.
+#'
 #' Five filter methods are supported:
 #' \itemize{
 #'   \item \code{"variance"}: features are ranked by their variance across
@@ -127,7 +139,11 @@
 #'       \code{"rise"}, or \code{"dearseq"}. Required.}
 #'     \item{\code{top_n}}{Positive integer. Number of top-ranked features to
 #'       retain. Takes precedence over \code{threshold} if both are supplied.
-#'       Either \code{top_n} or \code{threshold} must be specified.}
+#'       Either \code{top_n} or \code{threshold} must be specified. If
+#'       \code{top_n} is greater than or equal to the number of available
+#'       features (or genesets, for \code{dearseq_level = "geneset"}), all of
+#'       them are selected and a message is printed; selection scores are not
+#'       computed in this case (see Details).}
 #'     \item{\code{threshold}}{Numeric. Minimum score a feature must achieve
 #'       to be retained. Used only when \code{top_n} is \code{NULL}. For
 #'       \code{"variance"}, a minimum variance; for \code{"pearson"} and
@@ -218,9 +234,13 @@
 #'       \emph{all} features, in decreasing order. For
 #'       \code{"relative_gain"}, scores are the gain values. For
 #'       \code{"dearseq"} with \code{dearseq_level = "geneset"}, this is
-#'       indexed by geneset name (not gene name).}
+#'       indexed by geneset name (not gene name). All \code{NA} when
+#'       \code{top_n} exceeded (or equalled) the number of available
+#'       features/genesets, since scores are not computed in that case.}
 #'     \item{\code{top_n}}{Integer or \code{NULL}. The \code{top_n} value
-#'       used after resolving precedence with \code{threshold}.}
+#'       used after resolving precedence with \code{threshold} - capped to
+#'       the number of available features/genesets if it exceeded that
+#'       count.}
 #'     \item{\code{threshold}}{Numeric or \code{NULL}. The \code{threshold}
 #'       value used, or \code{NULL} if \code{top_n} was applied.}
 #'   }
@@ -374,108 +394,132 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   }
 
   # ---------------------------------------------------------------------------
-  # 2. Compute scores
+  # 2. Compute scores (skipped entirely if top_n already covers every
+  # available feature/geneset - selection scores would be discarded anyway
+  # since all items are selected regardless of their value)
   # ---------------------------------------------------------------------------
-  scores <- switch(method,
+  is_dearseq_geneset <- identical(method, "dearseq") &&
+    identical(params$dearseq_level %||% "gene", "geneset") &&
+    !is.null(params$genesets)
+  effective_ids <- if (is_dearseq_geneset) names(params$genesets) else colnames(X_train)
+  effective_p   <- length(effective_ids)
+  unit_plural   <- if (is_dearseq_geneset) "genesets" else "features"
 
-                   variance = {
-                     apply(X_train, 2, var)
-                   },
+  top_n_exceeds_available <- !is.null(top_n) && top_n >= effective_p
 
-                   pearson = {
-                     apply(X_train, 2, function(x) abs(cor(x, Y_train, method = "pearson")))
-                   },
+  if (top_n_exceeds_available) {
 
-                   spearman = {
-                     apply(X_train, 2, function(x) abs(cor(x, Y_train, method = "spearman")))
-                   },
+    message(
+      "[predictomics] selection_params$top_n (", top_n, ") exceeds (or ",
+      "equals) the number of available ", unit_plural, " (", effective_p,
+      "); selecting all ", effective_p, " ", unit_plural, " without ",
+      "computing selection scores."
+    )
+    top_n  <- effective_p
+    scores <- stats::setNames(rep(NA_real_, effective_p), effective_ids)
 
-                   relative_gain = {
-                     .compute_relative_gain(
-                       X_train      = X_train,
-                       Y_train      = Y_train,
-                       covariates   = covariates,
-                       metric       = params$relative_gain_metric       %||% "rmse",
-                       inner_folds  = params$relative_gain_inner_folds  %||% 5L,
-                       seed         = params$relative_gain_seed         %||% 12345L
-                     )
-                   },
-
-                   rise = {
-                     .compute_rise_scores(
-                       X_train          = X_train,
-                       Y_train          = Y_train,
-                       treatment        = treatment,
-                       individual_id    = individual_id,
-                       timepoint        = timepoint,
-                       top_n            = top_n,
-                       alpha            = params$rise_alpha         %||% 0.05,
-                       power_want_s     = params$rise_power_want_s,
-                       epsilon          = params$rise_epsilon,
-                       u_y_hyp          = params$rise_u_y_hyp       %||% NULL,
-                       p_correction     = params$rise_p_correction  %||% "BH",
-                       n_cores          = params$rise_n_cores        %||% 1L,
-                       alternative      = params$rise_alternative   %||% "two.sided",
-                       paired           = params$rise_paired         %||% FALSE
-                     )
-                   },
-
-                   dearseq = {
-                     dearseq_covariates <- params$dearseq_covariates %||% covariates
-                     if ((params$dearseq_level %||% "gene") == "geneset") {
-                       .compute_dearseq_geneset_scores(
-                         X_train         = X_train,
-                         covariates      = dearseq_covariates,
-                         treatment       = treatment,
-                         individual_id   = individual_id,
-                         timepoint       = timepoint,
-                         dearseq_mode    = params$dearseq_mode          %||% "classic",
-                         genesets        = params$genesets,
-                         which_test      = params$dearseq_which_test    %||% "asymptotic",
-                         preprocessed    = params$dearseq_preprocessed  %||% TRUE,
-                         padjust_methods = params$dearseq_padjust_methods %||% "BH",
-                         which_weights   = params$dearseq_which_weights %||% "loclin",
-                         n_perm          = params$dearseq_n_perm        %||% 1000L,
-                         bw              = params$dearseq_bw            %||% "nrd",
-                         kernel          = params$dearseq_kernel        %||% "gaussian"
-                       )
-                     } else {
-                       .compute_dearseq_scores(
-                         X_train         = X_train,
-                         covariates      = dearseq_covariates,
-                         treatment       = treatment,
-                         individual_id   = individual_id,
-                         timepoint       = timepoint,
-                         dearseq_mode    = params$dearseq_mode          %||% "classic",
-                         which_test      = params$dearseq_which_test    %||% "asymptotic",
-                         preprocessed    = params$dearseq_preprocessed  %||% TRUE,
-                         padjust_methods = params$dearseq_padjust_methods %||% "BH",
-                         which_weights   = params$dearseq_which_weights %||% "loclin",
-                         n_perm          = params$dearseq_n_perm        %||% 1000L,
-                         bw              = params$dearseq_bw            %||% "nrd",
-                         kernel          = params$dearseq_kernel        %||% "gaussian"
-                       )
-                     }
-                   }
-  )
-
-  if (method %in% c("rise", "dearseq")) {
-    scores <- sort(scores, decreasing = FALSE)
   } else {
-    scores <- sort(scores, decreasing = TRUE)
+
+    scores <- switch(method,
+
+                     variance = {
+                       apply(X_train, 2, var)
+                     },
+
+                     pearson = {
+                       apply(X_train, 2, function(x) abs(cor(x, Y_train, method = "pearson")))
+                     },
+
+                     spearman = {
+                       apply(X_train, 2, function(x) abs(cor(x, Y_train, method = "spearman")))
+                     },
+
+                     relative_gain = {
+                       .compute_relative_gain(
+                         X_train      = X_train,
+                         Y_train      = Y_train,
+                         covariates   = covariates,
+                         metric       = params$relative_gain_metric       %||% "rmse",
+                         inner_folds  = params$relative_gain_inner_folds  %||% 5L,
+                         seed         = params$relative_gain_seed         %||% 12345L
+                       )
+                     },
+
+                     rise = {
+                       .compute_rise_scores(
+                         X_train          = X_train,
+                         Y_train          = Y_train,
+                         treatment        = treatment,
+                         individual_id    = individual_id,
+                         timepoint        = timepoint,
+                         top_n            = top_n,
+                         alpha            = params$rise_alpha         %||% 0.05,
+                         power_want_s     = params$rise_power_want_s,
+                         epsilon          = params$rise_epsilon,
+                         u_y_hyp          = params$rise_u_y_hyp       %||% NULL,
+                         p_correction     = params$rise_p_correction  %||% "BH",
+                         n_cores          = params$rise_n_cores        %||% 1L,
+                         alternative      = params$rise_alternative   %||% "two.sided",
+                         paired           = params$rise_paired         %||% FALSE
+                       )
+                     },
+
+                     dearseq = {
+                       dearseq_covariates <- params$dearseq_covariates %||% covariates
+                       if ((params$dearseq_level %||% "gene") == "geneset") {
+                         .compute_dearseq_geneset_scores(
+                           X_train         = X_train,
+                           covariates      = dearseq_covariates,
+                           treatment       = treatment,
+                           individual_id   = individual_id,
+                           timepoint       = timepoint,
+                           dearseq_mode    = params$dearseq_mode          %||% "classic",
+                           genesets        = params$genesets,
+                           which_test      = params$dearseq_which_test    %||% "asymptotic",
+                           preprocessed    = params$dearseq_preprocessed  %||% TRUE,
+                           padjust_methods = params$dearseq_padjust_methods %||% "BH",
+                           which_weights   = params$dearseq_which_weights %||% "loclin",
+                           n_perm          = params$dearseq_n_perm        %||% 1000L,
+                           bw              = params$dearseq_bw            %||% "nrd",
+                           kernel          = params$dearseq_kernel        %||% "gaussian"
+                         )
+                       } else {
+                         .compute_dearseq_scores(
+                           X_train         = X_train,
+                           covariates      = dearseq_covariates,
+                           treatment       = treatment,
+                           individual_id   = individual_id,
+                           timepoint       = timepoint,
+                           dearseq_mode    = params$dearseq_mode          %||% "classic",
+                           which_test      = params$dearseq_which_test    %||% "asymptotic",
+                           preprocessed    = params$dearseq_preprocessed  %||% TRUE,
+                           padjust_methods = params$dearseq_padjust_methods %||% "BH",
+                           which_weights   = params$dearseq_which_weights %||% "loclin",
+                           n_perm          = params$dearseq_n_perm        %||% 1000L,
+                           bw              = params$dearseq_bw            %||% "nrd",
+                           kernel          = params$dearseq_kernel        %||% "gaussian"
+                         )
+                       }
+                     }
+    )
+
+    if (method %in% c("rise", "dearseq")) {
+      scores <- sort(scores, decreasing = FALSE)
+    } else {
+      scores <- sort(scores, decreasing = TRUE)
+    }
   }
 
   # ---------------------------------------------------------------------------
   # 3. Select features (or, for dearseq geneset-level, genesets - resolved to
   # gene names below)
   # ---------------------------------------------------------------------------
-  is_dearseq_geneset <- identical(method, "dearseq") &&
-    identical(params$dearseq_level %||% "gene", "geneset")
   unit <- if (is_dearseq_geneset) "geneset" else "feature"
 
   selected_labels <- if (!is.null(top_n)) {
 
-    if (method == "relative_gain" && any(scores[seq_len(top_n)] < 0)) {
+    if (!top_n_exceeds_available && method == "relative_gain" &&
+        any(scores[seq_len(top_n)] < 0)) {
 
       n_below_floor <- sum(scores[seq_len(top_n)] < 0)
 

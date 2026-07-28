@@ -322,16 +322,18 @@ test_that("dearseq_level must be 'gene' or 'geneset'", {
   )
 })
 
-test_that("top_n for dearseq geneset-level is bounded by the number of genesets, not gene columns", {
+test_that("top_n for dearseq geneset-level is not bounded at validation time (checked by run_selection instead)", {
   d <- .make_dearseq_data()
 
+  # top_n (3) exceeds the number of genesets (2), but this is no longer a
+  # validation error - run_selection() handles it directly (see below).
   expect_error(
     .validate_selection_params(
       list(method = "dearseq", dearseq_level = "geneset", genesets = d$genesets,
            top_n = 3),
       p = ncol(d$X)
     ),
-    "genesets"
+    NA
   )
 
   expect_error(
@@ -342,6 +344,26 @@ test_that("top_n for dearseq geneset-level is bounded by the number of genesets,
     ),
     NA
   )
+})
+
+test_that("run_selection selects all genesets (with a message) when top_n exceeds the number of genesets", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+
+  msgs <- testthat::capture_messages(
+    res <- run_selection(
+      X_train       = d$X,
+      individual_id = d$individual_id,
+      timepoint     = d$timepoint,
+      params        = list(method = "dearseq", dearseq_mode = "paired",
+                           dearseq_level = "geneset", genesets = d$genesets,
+                           top_n = 3)
+    )
+  )
+
+  expect_true(any(grepl("exceeds \\(or equals\\)", msgs)))
+  expect_setequal(res$selected_features, unlist(d$genesets, use.names = FALSE))
+  expect_true(all(is.na(res$selection_scores)))
 })
 
 test_that("run_selection resolves selected genesets to member gene names (geneset-level)", {
