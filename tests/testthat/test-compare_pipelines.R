@@ -203,3 +203,27 @@ test_that("print and plot methods run without error", {
   p2 <- plot(cmp, metric = "all")
   expect_s3_class(p2, "ggplot")
 })
+
+test_that("predict_cv's own messages are suppressed, but compare_pipelines's are not", {
+  d <- .make_compare_data()
+
+  msgs <- testthat::capture_messages(
+    cmp <- compare_pipelines(
+      Y = d$Y, X = d$X,
+      option_type    = "selection",
+      option_choices = list(
+        list(method = "spearman", top_n = 5)
+      ),
+      reference_params = list(
+        selection_params = list(method = "pearson", top_n = 5),
+        model_params      = list(method = "glmnet")
+      ),
+      folds   = 4,
+      verbose = TRUE
+    )
+  )
+
+  expect_true(any(grepl("Fitting pipeline", msgs)))
+  expect_false(any(grepl("Double variable selection", msgs)))
+  expect_false(any(grepl("Starting", msgs)))
+})

@@ -138,6 +138,15 @@ If a fit fails, a message is printed (regardless of \code{verbose}) and
 that pipeline is excluded from the returned results; the remaining
 pipelines are still attempted.
 
+\strong{Message suppression}: every \code{\link{predict_cv}} call is wrapped in
+\code{suppressMessages()}, so none of \code{predict_cv}'s own progress or
+diagnostic messages (e.g. the double-selection note when both an explicit
+selection method and an embedded selection model are specified) are ever
+shown, regardless of its internal \code{verbose} gating. Only
+\code{compare_pipelines()}'s own messages (\code{"Fitting pipeline: ..."},
+gated by this function's \code{verbose} argument, and pipeline-failure
+notices, always shown) are printed.
+
 \strong{Same-class option labelling}: when \code{option_choices} is unnamed,
 or contains blank/duplicate names, labels are generated from each choice's
 \code{method} element. If multiple choices share the same method (e.g.
