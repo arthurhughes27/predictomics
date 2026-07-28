@@ -580,10 +580,9 @@ print.predictomics_comparison <- function(x, digits = 4, ...) {
 #' single "Pipelines" legend) annotated with its metric value at the right of
 #' the panel. The best-performing bar (lowest \code{RMSE}/\code{sRMSE}, or
 #' highest \code{R2}/\code{SpearmanR}) is marked with a diagonal hatch pattern
-#' (via the Suggested \pkg{ggpattern} package, with a "Best pipeline" legend
-#' key), without altering its fill colour, so the "Pipelines" legend remains
-#' accurate. If \pkg{ggpattern} is not installed, the best bar is instead
-#' outlined in black (no separate legend key in that case). When
+#' (via \pkg{ggpattern}), with its own "Best pipeline" legend key; the
+#' "Pipelines" (fill) legend keys never show hatching themselves, regardless
+#' of which bar is best, so the two legends stay visually distinct. When
 #' \code{metric = "all"}, the four metrics are shown as facets, each with its
 #' own best-bar highlight and baseline annotation.
 #'
@@ -642,36 +641,33 @@ plot.predictomics_comparison <- function(x,
 
   pipeline_colours <- c(Reference = "#FC8D62", Alternative = "#8DA0CB")
   bar_width        <- 0.7
-  has_ggpattern    <- requireNamespace("ggpattern", quietly = TRUE)
 
-  # Bar geom: hatched pattern on the best-performing bar (via ggpattern) when
-  # available, else a plain bar with a separate black-outline highlight layer.
-  bar_geom <- if (has_ggpattern) {
-    ggpattern::geom_col_pattern(
-      ggplot2::aes(pattern = is_best),
-      alpha            = 0.9, width = bar_width,
-      pattern_fill     = "grey20", pattern_colour = NA,
-      pattern_density  = 0.25, pattern_spacing = 0.03, pattern_angle = 45,
-      pattern_key_scale_factor = 0.6
-    )
-  } else {
-    ggplot2::geom_col(alpha = 0.9, width = bar_width)
-  }
+  # Bar geom: a hatched pattern marks the best-performing bar. The "pattern"
+  # legend shows only the "Best pipeline" key; the "Pipelines" (fill) legend
+  # keys are overridden to never show hatching, regardless of is_best, so the
+  # two legends don't visually interfere with each other.
+  bar_geom <- ggpattern::geom_col_pattern(
+    ggplot2::aes(pattern = is_best),
+    alpha            = 0.9, width = bar_width,
+    pattern_fill     = "grey20", pattern_colour = NA,
+    pattern_density  = 0.25, pattern_spacing = 0.03, pattern_angle = 45,
+    pattern_key_scale_factor = 0.6
+  )
 
-  pattern_scale <- if (has_ggpattern) {
-    ggpattern::scale_pattern_manual(
-      name   = NULL,
-      values = c(`TRUE` = "stripe", `FALSE` = "none"),
-      breaks = "TRUE",
-      labels = "Best pipeline",
-      guide  = ggplot2::guide_legend(
-        override.aes = list(fill = "grey90", pattern_fill = "grey20"),
-        order        = 2
-      )
+  pattern_scale <- ggpattern::scale_pattern_manual(
+    name   = NULL,
+    values = c(`TRUE` = "stripe", `FALSE` = "none"),
+    breaks = "TRUE",
+    labels = "Best pipeline",
+    guide  = ggplot2::guide_legend(
+      override.aes = list(fill = "grey90", pattern_fill = "grey20"),
+      order        = 2
     )
-  } else {
-    NULL
-  }
+  )
+
+  fill_guide <- ggplot2::guide_legend(
+    override.aes = list(pattern = "none"), order = 1
+  )
 
   if (metric == "all") {
 
@@ -704,13 +700,6 @@ plot.predictomics_comparison <- function(x,
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = pipeline, y = value,
                                                fill = role)) +
       bar_geom +
-      {
-        if (!has_ggpattern)
-          ggplot2::geom_col(
-            data = best_df, colour = "black", fill = NA,
-            linewidth = 0.9, width = bar_width
-          )
-      } +
       ggplot2::geom_hline(
         data        = ref_lines,
         ggplot2::aes(yintercept = value, linetype = "Baseline"),
@@ -748,13 +737,6 @@ plot.predictomics_comparison <- function(x,
     p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = pipeline, y = metric_value,
                                                fill = role)) +
       bar_geom +
-      {
-        if (!has_ggpattern)
-          ggplot2::geom_col(
-            data = best_df, colour = "black", fill = NA,
-            linewidth = 0.9, width = bar_width
-          )
-      } +
       ggplot2::geom_hline(
         data        = baseline_df,
         ggplot2::aes(yintercept = value, linetype = "Baseline"),
@@ -779,7 +761,7 @@ plot.predictomics_comparison <- function(x,
   }
 
   p <- p +
-    ggplot2::scale_fill_manual(values = pipeline_colours) +
+    ggplot2::scale_fill_manual(values = pipeline_colours, guide = fill_guide) +
     ggplot2::theme_bw() +
     ggplot2::theme(
       plot.title       = ggplot2::element_text(face = "bold", size = 16),

@@ -36,10 +36,9 @@ Baseline is shown instead as a dashed horizontal line (both are part of a
 single "Pipelines" legend) annotated with its metric value at the right of
 the panel. The best-performing bar (lowest \code{RMSE}/\code{sRMSE}, or
 highest \code{R2}/\code{SpearmanR}) is marked with a diagonal hatch pattern
-(via the Suggested \pkg{ggpattern} package, with a "Best pipeline" legend
-key), without altering its fill colour, so the "Pipelines" legend remains
-accurate. If \pkg{ggpattern} is not installed, the best bar is instead
-outlined in black (no separate legend key in that case). When
+(via \pkg{ggpattern}), with its own "Best pipeline" legend key; the
+"Pipelines" (fill) legend keys never show hatching themselves, regardless
+of which bar is best, so the two legends stay visually distinct. When
 \code{metric = "all"}, the four metrics are shown as facets, each with its
 own best-bar highlight and baseline annotation.
 }
