@@ -311,8 +311,8 @@ compare_pipelines <- function(Y,
         list(Y = Y, X = X, covariates = covariates, treatment = treatment)
       }
 
-      pass_individual_id <- if (spec$uses_gene_level_fc) individual_id else NULL
-      pass_timepoint      <- if (spec$uses_gene_level_fc) timepoint else NULL
+      pass_individual_id <- if (restrict) NULL else individual_id
+      pass_timepoint      <- if (restrict) NULL else timepoint
 
       suppressMessages(predict_cv(
         Y                   = data$Y,
