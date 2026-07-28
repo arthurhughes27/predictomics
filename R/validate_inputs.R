@@ -549,36 +549,6 @@
   invisible(NULL)
 }
 
-# -----------------------------------------------------------------------------
-#' Validate treatment for paired RISE mode
-#'
-#' @description
-#' Checks that treatment is binary numeric (not factor) and that the number
-#' of treated (1) and untreated (0) samples are equal, as required by
-#' paired RISE. Called from predict_cv when rise_paired = TRUE is detected.
-#'
-#' @param treatment Binary numeric vector (0/1).
-#' @return Invisibly returns NULL if validation passes.
-#' @keywords internal
-# -----------------------------------------------------------------------------
-.validate_paired_rise_treatment <- function(treatment) {
-
-  if (!is.numeric(treatment) || !all(treatment %in% c(0, 1)))
-    stop("[predictomics] Paired RISE requires treatment to be a binary ",
-         "numeric vector (0/1), not a factor.", call. = FALSE)
-
-  n1 <- sum(treatment == 1)
-  n0 <- sum(treatment == 0)
-
-  if (n1 != n0)
-    stop("[predictomics] Paired RISE requires equal numbers of pre-treatment ",
-         "(0) and post-treatment (1) samples. Found ", n0, " pre-treatment ",
-         "and ", n1, " post-treatment samples.", call. = FALSE)
-
-  invisible(NULL)
-}
-
-
 
 # -----------------------------------------------------------------------------
 #' Validate a paired individual_id/timepoint design
@@ -588,8 +558,10 @@
 #' the correct length and type, and that every individual has exactly two
 #' observations, one at each timepoint (0 = pre-treatment, 1 =
 #' post-treatment). Called from \code{predict_cv} when
-#' \code{engineering_params$gene_level_fc = TRUE} is detected, and from
-#' \code{run_selection} for \code{selection_params$dearseq_mode = "paired"}.
+#' \code{engineering_params$gene_level_fc = TRUE} or
+#' \code{selection_params$rise_paired = TRUE} is detected, and from
+#' \code{run_selection} for \code{selection_params$dearseq_mode = "paired"}
+#' and \code{selection_params$rise_paired = TRUE}.
 #'
 #' @param individual_id Vector of length n identifying individuals, or
 #'   \code{NULL}.

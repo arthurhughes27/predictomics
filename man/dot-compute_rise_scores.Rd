@@ -16,7 +16,9 @@
   p_correction,
   n_cores,
   alternative,
-  paired
+  paired,
+  individual_id = NULL,
+  timepoint = NULL
 )
 }
 \arguments{
@@ -24,12 +26,25 @@
 
 \item{Y_train}{Numeric vector. Training response.}
 
-\item{treatment}{Binary numeric vector (0/1). Treatment assignment.}
+\item{treatment}{Binary numeric vector (0/1). Treatment assignment. Used
+as the contrast when \code{paired = FALSE}; ignored when
+\code{paired = TRUE} (see \code{individual_id}/\code{timepoint}).}
 
 \item{top_n}{Integer or NULL. Used only to determine whether the tiebreak
 note should be printed.}
 
 \item{alpha, power_want_s, epsilon, u_y_hyp, p_correction, n_cores, alternative, paired}{Arguments passed directly to \code{SurrogateRank::rise.screen()}.}
+
+\item{individual_id}{Vector identifying individuals, or \code{NULL}.
+Required when \code{paired = TRUE}: rows are sorted by
+\code{individual_id} (then \code{timepoint}) before splitting into
+pre/post groups, so that pre- and post-treatment rows for the same
+individual are matched regardless of input row order. Ignored when
+\code{paired = FALSE}.}
+
+\item{timepoint}{Binary numeric vector (0/1), or \code{NULL}. Used as the
+contrast (0 = pre-treatment, 1 = post-treatment) when \code{paired =
+TRUE}, in place of \code{treatment}. Ignored when \code{paired = FALSE}.}
 }
 \value{
 Named numeric vector of negated adjusted p-values, one per feature.

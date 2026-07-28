@@ -33,6 +33,11 @@
 #' @param treatment Original treatment vector or \code{NULL}.
 #' @param treatment_mat Numeric matrix of treatment columns or \code{NULL}.
 #' @param covariate_mat Numeric matrix of covariate columns or \code{NULL}.
+#' @param individual_id_full,timepoint_full Full-data (both pre/post arms)
+#'   \code{individual_id}/\code{timepoint} vectors for paired RISE, already
+#'   sorted by individual so that pre- and post-treatment rows for the same
+#'   individual are matched by position. \code{NULL} unless
+#'   \code{is_paired_rise = TRUE}.
 #'
 #' @return A named list with:
 #'   \describe{
@@ -53,7 +58,9 @@
                       X_full             = NULL,
                       Y_full             = NULL,
                       treatment_full     = NULL,
-                      covariate_mat_full = NULL) {
+                      covariate_mat_full = NULL,
+                      individual_id_full = NULL,
+                      timepoint_full     = NULL) {
 
   n         <- length(Y)
   train_idx <- which(fold_ids != k)
@@ -79,10 +86,13 @@
       # The fold indices in the modelling space (post-treatment only) map to
       # post-treatment rows in the full dataset via the stored post_idx.
       # We pass the full training partition of the paired data to run_selection.
+      # timepoint_full/individual_id_full are already sorted by individual (see
+      # predict_cv()), so pre_idx[i] and post_idx[i] below are guaranteed to be
+      # the same individual, regardless of the original input row order.
       n_full      <- nrow(X_full)
       n_post      <- nrow(X_processed)
-      post_idx    <- which(treatment_full == 1)
-      pre_idx     <- which(treatment_full == 0)
+      post_idx    <- which(timepoint_full == 1)
+      pre_idx     <- which(timepoint_full == 0)
 
       # Training post-treatment indices in full data space
       post_train  <- post_idx[train_idx]
@@ -90,13 +100,16 @@
       paired_train_idx <- c(pre_train, post_train)
 
       sel_fit <- run_selection(
-        X_train    = X_full[paired_train_idx, , drop = FALSE],
-        Y_train    = Y_full[paired_train_idx],
-        covariates = if (!is.null(covariate_mat_full))
+        X_train       = X_full[paired_train_idx, , drop = FALSE],
+        Y_train       = Y_full[paired_train_idx],
+        covariates    = if (!is.null(covariate_mat_full))
           covariate_mat_full[paired_train_idx, , drop = FALSE]
         else NULL,
-        treatment  = treatment_full[paired_train_idx],
-        params     = selection_params
+        treatment     = if (!is.null(treatment_full))
+          treatment_full[paired_train_idx] else NULL,
+        individual_id = individual_id_full[paired_train_idx],
+        timepoint     = timepoint_full[paired_train_idx],
+        params        = selection_params
       )
     } else {
       sel_fit <- run_selection(

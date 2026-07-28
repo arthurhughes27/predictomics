@@ -29,20 +29,24 @@ is supplied. Ignored for all other methods. Pass \code{NULL} (default)
 for no covariates (intercept-only baseline).}
 
 \item{treatment}{A binary numeric vector of length n with values 0 and 1,
-encoding treatment group membership. Required for \code{"rise"} and for
-\code{"dearseq"} with \code{dearseq_mode = "classic"}; optionally used
-to restrict rows for \code{"dearseq"} with
-\code{dearseq_mode = "paired"}. Ignored for all other methods. Pass
-\code{NULL} (default) if not applicable.}
-
-\item{individual_id}{Vector of length n identifying individuals. Required
-for \code{"dearseq"} with \code{dearseq_mode = "paired"} (used as
-\code{sample_group}); optionally used (together with \code{timepoint})
-to restrict rows for \code{dearseq_mode = "classic"}. Ignored for all
+encoding treatment group membership. Required for \code{"rise"} (unless
+\code{rise_paired = TRUE}, in which case \code{individual_id}/
+\code{timepoint} are required instead) and for \code{"dearseq"} with
+\code{dearseq_mode = "classic"}; optionally used to restrict rows for
+\code{"dearseq"} with \code{dearseq_mode = "paired"}. Ignored for all
 other methods. Pass \code{NULL} (default) if not applicable.}
 
+\item{individual_id}{Vector of length n identifying individuals. Required
+for \code{"rise"} with \code{rise_paired = TRUE} and for \code{"dearseq"}
+with \code{dearseq_mode = "paired"} (used as \code{sample_group});
+optionally used (together with \code{timepoint}) to restrict rows for
+\code{dearseq_mode = "classic"}. Ignored for all other methods. Pass
+\code{NULL} (default) if not applicable.}
+
 \item{timepoint}{A binary numeric vector of length n (0/1), paired with
-\code{individual_id}. Required for \code{"dearseq"} with
+\code{individual_id}. Required for \code{"rise"} with
+\code{rise_paired = TRUE} (used as the pre/post contrast in place of
+\code{treatment}) and for \code{"dearseq"} with
 \code{dearseq_mode = "paired"}; optionally used to restrict rows for
 \code{dearseq_mode = "classic"}. Ignored for all other methods. Pass
 \code{NULL} (default) if not applicable.}
@@ -82,7 +86,13 @@ computation, passed as \code{n.cores}. Defaults to \code{1}.}
 passed as \code{alternative}. One of \code{"less"} or
 \code{"two.sided"}. Defaults to \code{"two.sided"}.}
 \item{\code{rise_paired}}{Logical. Whether data are paired, passed as
-\code{paired}. Defaults to \code{FALSE}.}
+\code{paired}. When \code{TRUE}, \code{individual_id} and
+\code{timepoint} are required (in the same paired design as
+\code{"dearseq"} with \code{dearseq_mode = "paired"}): the
+pre/post contrast is \code{timepoint} rather than \code{treatment},
+and rows are sorted by \code{individual_id} (then \code{timepoint})
+to guarantee correct pairing regardless of input row order.
+Defaults to \code{FALSE}.}
 \item{\code{dearseq_mode}}{Character string. One of \code{"classic"}
 (default) or \code{"paired"}. See Details.}
 \item{\code{dearseq_level}}{Character string. One of \code{"gene"}
