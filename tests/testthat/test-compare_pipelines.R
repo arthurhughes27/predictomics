@@ -179,6 +179,45 @@ test_that("gene_level_fc engineering option errors informatively without individ
   )
 })
 
+test_that("individual_id/timepoint are passed through for non-engineering option_type comparisons (regression test)", {
+  testthat::skip_if_not_installed("dearseq")
+
+  n_ind <- 10
+  p     <- 6
+  set.seed(3)
+  n <- n_ind * 2
+  individual_id <- rep(seq_len(n_ind), each = 2)
+  timepoint     <- rep(c(0, 1), times = n_ind)
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("gene", seq_len(p))
+  Y <- rnorm(n)
+
+  # option_type = "selection" (not "engineering") with a dearseq paired-mode
+  # option: individual_id/timepoint must still reach predict_cv() for every
+  # pipeline, since the gene_level_fc row-parity mechanism (which used to
+  # gate this pass-through) is irrelevant here.
+  cmp <- compare_pipelines(
+    Y = Y, X = X,
+    option_type    = "selection",
+    option_choices = list(
+      dearseq_paired = list(method = "dearseq", dearseq_mode = "paired",
+                           threshold = 1.1)
+    ),
+    reference_params = list(
+      selection_params = list(method = "variance", top_n = 3),
+      model_params      = list(method = "lm")
+    ),
+    individual_id = individual_id,
+    timepoint     = timepoint,
+    folds   = 2,
+    verbose = FALSE
+  )
+
+  expect_true("dearseq_paired" %in% cmp$results$pipeline)
+  expect_true("Baseline" %in% cmp$results$pipeline)
+  expect_true("Reference" %in% cmp$results$pipeline)
+})
+
 test_that("print and plot methods run without error", {
   d <- .make_compare_data()
 
