@@ -271,12 +271,12 @@ test_that("plot.predictomics_comparison marks the best-performing bar without ch
   # introduces a third fill level.
   expect_equal(nlevels(droplevels(p$data$role)), 2L)
 
-  if (requireNamespace("ggpattern", quietly = TRUE)) {
-    has_pattern_scale <- any(vapply(
-      p$scales$scales, function(s) "pattern" %in% s$aesthetics, logical(1)
-    ))
-    expect_true(has_pattern_scale)
-  }
+  # A "pattern" scale exists for the hatched "Best pipeline" highlight,
+  # separate from the "Pipelines" fill legend.
+  has_pattern_scale <- any(vapply(
+    p$scales$scales, function(s) "pattern" %in% s$aesthetics, logical(1)
+  ))
+  expect_true(has_pattern_scale)
 })
 
 test_that("predict_cv's own messages are suppressed, but compare_pipelines's are not", {
