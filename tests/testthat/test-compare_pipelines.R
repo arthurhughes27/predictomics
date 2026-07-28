@@ -204,6 +204,42 @@ test_that("print and plot methods run without error", {
   expect_s3_class(p2, "ggplot")
 })
 
+test_that("plot.predictomics_comparison shows the baseline as a line, not a bar", {
+  d <- .make_compare_data()
+
+  cmp <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "selection",
+    option_choices = list(
+      list(method = "spearman", top_n = 5),
+      list(method = "variance", top_n = 5)
+    ),
+    reference_params = list(
+      selection_params = list(method = "pearson", top_n = 5),
+      model_params      = list(method = "lm")
+    ),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  p <- plot(cmp)
+
+  # First layer is the bar geom_col: one bar per Reference/Alternative
+  # pipeline, none for the Baseline (which is a dashed line layer instead).
+  bar_data <- ggplot2::layer_data(p, 1)
+  expect_equal(nrow(bar_data), nrow(cmp$results) - 1L)
+
+  # A linetype scale exists for the "Baseline" reference line, sharing the
+  # "Pipelines" legend title with the bar fill scale.
+  expect_equal(p$labels$fill, "Pipelines")
+  expect_equal(p$labels$linetype, "Pipelines")
+
+  has_linetype_scale <- any(vapply(
+    p$scales$scales, function(s) "linetype" %in% s$aesthetics, logical(1)
+  ))
+  expect_true(has_linetype_scale)
+})
+
 test_that("predict_cv's own messages are suppressed, but compare_pipelines's are not", {
   d <- .make_compare_data()
 
