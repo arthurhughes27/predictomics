@@ -10,14 +10,18 @@
   point_alpha = 0.6,
   point_size = 2,
   annotation_pos = "topleft",
+  highlight = NULL,
+  highlight_type = NULL,
+  highlight_label = NULL,
   ...
 )
 }
 \arguments{
 \item{x}{A \code{predictomics} object returned by \code{\link{predict_cv}}.}
 
-\item{point_colour}{Character string. Colour of points when no treatment
-variable is present. Defaults to \code{"steelblue"}.}
+\item{point_colour}{Character string. Colour of points when neither
+\code{highlight} nor a treatment variable is present. Defaults to
+\code{"steelblue"}.}
 
 \item{point_alpha}{Numeric between 0 and 1. Transparency of points.
 Defaults to \code{0.6}.}
@@ -26,6 +30,19 @@ Defaults to \code{0.6}.}
 
 \item{annotation_pos}{Character string. Position of the metric annotation.
 One of \code{"topleft"} (default) or \code{"bottomright"}.}
+
+\item{highlight}{A vector used to colour points, overriding any treatment
+colouring. Must have the same length as \code{x$observed} (i.e. one
+value per plotted sample, in the same order). Pass \code{NULL} (default)
+to colour by treatment (if present) or not at all.}
+
+\item{highlight_type}{Character string. Required when \code{highlight} is
+supplied. One of \code{"categorical"} (discrete colour scale, with a
+legend entry per level) or \code{"continuous"} (colour gradient with a
+colourbar legend).}
+
+\item{highlight_label}{Character string. Legend title used for
+\code{highlight}. Defaults to \code{"Highlight"} if \code{NULL}.}
 
 \item{...}{Additional arguments passed to \code{ggplot2::theme}.}
 }
@@ -38,7 +55,8 @@ predicted (y-axis) values from a \code{predictomics} result object.
 A diagonal reference line (y = x) representing perfect prediction is
 included. sRMSE and R² are annotated in the top left corner of the plot.
 If a \code{treatment} variable is present in the result object, points are
-coloured by treatment group.
+coloured by treatment group, unless \code{highlight} is supplied, in which
+case it takes precedence.
 }
 \details{
 Axis limits are computed as the range of the combined observed and predicted
@@ -51,10 +69,19 @@ R² is the squared Pearson correlation. sRMSE is RMSE divided by the
 standard deviation of the observed values. Both are computed via
 \code{\link{metrics.predictomics}}.
 
-When \code{treatment} is present, a colorblind-friendly palette from
-\code{RColorBrewer} (\code{"Set2"}) is used to distinguish groups.
-When \code{treatment} is absent, all points are drawn in
-\code{point_colour}.
+When \code{highlight} is supplied, points are coloured by its values
+instead of \code{treatment} (if any), and any treatment colouring is
+overridden entirely. For \code{highlight_type = "categorical"}, a discrete
+colour scale adapted to the number of levels is used - \code{RColorBrewer}
+\code{"Set2"} for up to 8 levels, or \code{viridis} (discrete) beyond that
+- with a legend showing each level. For \code{highlight_type =
+"continuous"}, a \code{viridis} colour gradient is used, with a continuous
+colourbar legend.
+
+When \code{highlight} is absent and \code{treatment} is present, a
+colorblind-friendly palette from \code{RColorBrewer} (\code{"Set2"}) is
+used to distinguish treatment groups. When neither is present, all points
+are drawn in \code{point_colour}.
 }
 \examples{
 \dontrun{
@@ -64,6 +91,14 @@ plot(result)
 # With treatment colouring
 result <- predict_cv(Y = Y, X = X, treatment = treatment)
 plot(result)
+
+# Highlight by a categorical variable (overrides treatment colouring)
+plot(result, highlight = batch, highlight_type = "categorical",
+    highlight_label = "Batch")
+
+# Highlight by a continuous variable
+plot(result, highlight = age, highlight_type = "continuous",
+    highlight_label = "Age")
 
 # Customise appearance
 plot(result, point_colour = "darkred", point_alpha = 0.8)
