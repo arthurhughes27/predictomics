@@ -1,0 +1,211 @@
+---
+title: "Getting started with predictomics"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with predictomics}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 5, fig.height = 5
+)
+```
+
+This tutorial gives a brief tour of the two main entry points in
+**predictomics**: `predict_cv()`, which fits a single cross-validated
+prediction pipeline, and `compare_pipelines()`, which benchmarks several
+pipeline choices against a baseline and a reference model. All examples use
+simulated data from `simulate_predictomics_data()`, which ships with the
+package so you can regenerate (or tweak) it at any time - see `?simulate_predictomics_data`.
+
+```{r setup}
+library(predictomics)
+set.seed(1)
+```
+
+## 1. Simulated data
+
+`simulate_predictomics_data()` creates a gene expression matrix `X` organised
+into genesets, a small number of which ("signal genesets") actually drive the
+response `Y`; the rest are noise. It also simulates a binary `treatment` and
+covariates (`age`, `sex`).
+
+```{r}
+d <- simulate_predictomics_data(n = 80, p = 200, n_genesets = 10,
+                                geneset_size = 20, n_signal_genesets = 2,
+                                seed = 1)
+
+dim(d$X)
+d$signal_genesets
+head(d$covariates)
+```
+
+## 2. A basic `predict_cv()` pipeline
+
+At its simplest, `predict_cv()` just needs `Y` and `X`; by default it fits an
+ordinary least squares model with 10-fold cross-validation and no feature
+engineering or selection.
+
+```{r}
+result <- predict_cv(Y = d$Y, X = d$X, folds = 5, verbose = FALSE)
+result
+```
+
+`plot()` shows observed vs. cross-validated predicted values:
+
+```{r}
+plot(result)
+```
+
+## 3. Feature selection
+
+With `p = 200` genes and `n = 80` samples, an unfiltered `lm` is unlikely to
+generalise well. `selection_params` lets you filter to the most promising
+features before fitting - here, the top 20 genes by absolute Pearson
+correlation with `Y`:
+
+```{r}
+result_pearson <- predict_cv(
+  Y = d$Y, X = d$X,
+  selection_params = list(method = "pearson", top_n = 20),
+  folds   = 5,
+  verbose = FALSE
+)
+result_pearson
+```
+
+`plot_selection_stability()` shows how consistently each feature is selected
+across the outer CV folds - a stable, informative filter should repeatedly
+pick genes belonging to the true signal genesets:
+
+```{r}
+plot_selection_stability(result_pearson, plot_type = "frequency", top_n = 15)
+```
+
+## 4. Feature engineering: geneset aggregation
+
+`engineering_params` can collapse genes into geneset-level scores before
+selection/modelling - useful for interpretability and for reducing
+dimensionality upfront. Here we aggregate by geneset mean, then select the
+most predictive genesets:
+
+```{r}
+result_geneset <- predict_cv(
+  Y = d$Y, X = d$X,
+  engineering_params = list(method = "engineer", col_transform = "none",
+                            genesets = d$genesets, agg_method = "mean"),
+  selection_params   = list(method = "pearson", top_n = 3),
+  folds   = 5,
+  verbose = FALSE
+)
+result_geneset
+```
+
+## 5. Model choice, treatment, and covariates
+
+`model_params$method` switches the underlying model (`"lm"`, `"glmnet"`,
+`"ridge"`, `"lasso"`, `"ranger"`, `"svr"`), each tuned internally via inner
+cross-validation. `treatment` and `covariates` are appended as protected
+predictors, always included regardless of feature selection:
+
+```{r}
+result_glmnet <- predict_cv(
+  Y = d$Y, X = d$X,
+  selection_params    = list(method = "pearson", top_n = 20),
+  model_params         = list(method = "glmnet", inner_folds = 5),
+  treatment            = d$treatment,
+  treatment_predictor  = TRUE,
+  covariates           = d$covariates,
+  folds   = 5,
+  verbose = FALSE
+)
+result_glmnet
+
+# Colour the observed-vs-predicted plot by an arbitrary variable
+plot(result_glmnet, highlight = d$covariates$age, highlight_type = "continuous",
+    highlight_label = "Age")
+```
+
+## 6. Baseline model
+
+Passing `X = NULL` fits a **baseline model** using only `covariates`/
+`treatment` (or, absent those, the training-fold mean of `Y`) - a built-in
+null comparator for judging whether the gene expression data adds anything:
+
+```{r}
+result_baseline <- predict_cv(
+  Y = d$Y, X = NULL,
+  covariates = d$covariates,
+  folds      = 5,
+  verbose    = FALSE
+)
+result_baseline
+```
+
+## 7. Comparing pipelines with `compare_pipelines()`
+
+Rather than calling `predict_cv()` repeatedly by hand, `compare_pipelines()`
+fits a baseline, a reference pipeline, and a set of alternative pipelines that
+vary exactly one stage (`option_type`: `"selection"`, `"engineering"`, or
+`"model"`), in one call. Here we compare three filtration methods against a
+Pearson-filtered `glmnet` reference:
+
+```{r}
+cmp <- compare_pipelines(
+  Y = d$Y, X = d$X,
+  option_type    = "selection",
+  option_choices = list(
+    spearman = list(method = "spearman", top_n = 20),
+    variance = list(method = "variance", top_n = 20)
+  ),
+  reference_params = list(
+    selection_params = list(method = "pearson", top_n = 20),
+    model_params      = list(method = "glmnet", inner_folds = 5)
+  ),
+  covariates = d$covariates,
+  folds      = 5,
+  verbose    = FALSE
+)
+cmp
+plot(cmp)
+```
+
+The bars show the Reference and each Alternative pipeline; the dashed line
+marks the Baseline; the hatched bar marks the best-performing pipeline.
+
+## 8. Paired pre/post designs
+
+For repeated-measures studies (e.g. pre/post vaccination), pass a
+`design = "paired"` dataset - `individual_id` and `timepoint` (0 = pre,
+1 = post) unlock `engineering_params$gene_level_fc` (fold-change features),
+`selection_params$dearseq_mode = "paired"` (differential expression, requires
+the `dearseq` package), and `selection_params$rise_paired` (requires
+`SurrogateRank`):
+
+```{r}
+d_paired <- simulate_predictomics_data(n = 40, p = 200, design = "paired", seed = 2)
+
+result_fc <- predict_cv(
+  Y = d_paired$Y, X = d_paired$X,
+  engineering_params = list(method = "engineer", gene_level_fc = TRUE),
+  selection_params   = list(method = "pearson", top_n = 20),
+  individual_id      = d_paired$individual_id,
+  timepoint          = d_paired$timepoint,
+  folds   = 5,
+  verbose = FALSE
+)
+result_fc
+```
+
+See `?predict_cv` for full details on `dearseq`- and RISE-based differential
+expression selection.
+
+## Session info
+
+```{r}
+sessionInfo()
+```
