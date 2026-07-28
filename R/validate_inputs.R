@@ -398,7 +398,7 @@
 #' Checks that \code{selection_params} specifies a supported method, that at
 #' least one of \code{top_n} or \code{threshold} is provided, and that their
 #' values are valid. For \code{"relative_gain"}, also validates
-#' \code{metric} and \code{inner_folds}.
+#' \code{relative_gain_metric} and \code{relative_gain_inner_folds}.
 #'
 #' @param params The \code{selection_params} list.
 #' @param p Integer. Number of features in \code{X_train}.
@@ -447,16 +447,16 @@
   # relative_gain-specific validation
   if (params$method == "relative_gain") {
 
-    metric <- params$metric %||% "rmse"
+    metric <- params$relative_gain_metric %||% "rmse"
     if (!metric %in% c("rmse", "srmse", "r2", "spearman"))
-      stop("[predictomics] selection_params$metric must be one of: ",
-           "'rmse', 'srmse', 'r2', 'spearman'.", call. = FALSE)
+      stop("[predictomics] selection_params$relative_gain_metric must be ",
+           "one of: 'rmse', 'srmse', 'r2', 'spearman'.", call. = FALSE)
 
-    inner_folds <- params$inner_folds %||% 5L
+    inner_folds <- params$relative_gain_inner_folds %||% 5L
     if (!is.numeric(inner_folds) || length(inner_folds) != 1L ||
         inner_folds != as.integer(inner_folds) || inner_folds < 2L)
-      stop("[predictomics] selection_params$inner_folds must be an integer ",
-           ">= 2.", call. = FALSE)
+      stop("[predictomics] selection_params$relative_gain_inner_folds must ",
+           "be an integer >= 2.", call. = FALSE)
   }
 
   # rise-specific validation
