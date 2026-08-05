@@ -21,9 +21,10 @@
 #' \code{predict_cv}'s own inner CV loop.
 #'
 #' @details
-#' Exactly one of \code{engineering_params}, \code{selection_params}, or
-#' \code{model_params} varies across the \code{K} alternative pipelines,
-#' selected by \code{option_type}:
+#' Exactly one axis varies across the \code{K} alternative pipelines, selected
+#' by \code{option_type}. Four axes are supported: the three pipeline stages
+#' (\code{engineering_params}, \code{selection_params}, \code{model_params})
+#' and the input data itself (\code{X} or \code{Y}):
 #' \itemize{
 #'   \item \code{"selection"}: each element of \code{option_choices}
 #'     replaces \code{reference_params$selection_params}; engineering and
@@ -34,6 +35,23 @@
 #'   \item \code{"model"}: each element of \code{option_choices} replaces
 #'     \code{reference_params$model_params}; selection and engineering are
 #'     held fixed.
+#'   \item \code{"predictors"}: each element of \code{option_choices} is a
+#'     numeric matrix (with \code{nrow(.) == length(Y)}) that replaces
+#'     \code{X} for that pipeline; \code{engineering_params},
+#'     \code{selection_params}, and \code{model_params} are held fixed at
+#'     their reference values, and \code{Y} is held fixed at its reference
+#'     value (\code{reference_params$Y}, or the \code{Y} argument if not
+#'     supplied). Useful for comparing candidate predictor panels (e.g.
+#'     different omics layers, or gene subsets) under an otherwise identical
+#'     pipeline.
+#'   \item \code{"response"}: each element of \code{option_choices} is a
+#'     numeric vector (with length matching the reference \code{X}'s
+#'     \code{nrow}, or \code{length(Y)} if \code{X = NULL}) that replaces
+#'     \code{Y} for that pipeline; \code{X}, \code{engineering_params},
+#'     \code{selection_params}, and \code{model_params} are held fixed at
+#'     their reference values (\code{reference_params$X}, or the \code{X}
+#'     argument if not supplied). Useful for comparing how well the same
+#'     predictor set predicts several candidate outcome variables.
 #' }
 #' \code{option_choices} should not include a configuration identical to the
 #' reference's corresponding stage; \code{compare_pipelines()} does not check
@@ -42,7 +60,12 @@
 #' The **baseline model** always uses \code{X = NULL} (see
 #' \code{\link{predict_cv}}), i.e. \code{engineering_params} and
 #' \code{selection_params} are both \code{NULL}, but reuses
-#' \code{reference_params$model_params} as its model choice.
+#' \code{reference_params$model_params} as its model choice. For
+#' \code{option_type = "response"}, the baseline is computed against the
+#' single reference \code{Y} only (\code{reference_params$Y}, or the
+#' \code{Y} argument); its metrics are therefore directly comparable to the
+#' \code{"Reference"} row but not necessarily to the \code{K} response
+#' options, which predict a different variable.
 #'
 #' **gene_level_fc row parity**: if \code{option_type = "engineering"} and
 #' at least one of the reference or the \code{K} options has
@@ -53,11 +76,21 @@
 #' matches the one-row-per-individual structure produced by
 #' \code{gene_level_fc}, so that all pipelines are compared on the same
 #' number of observations and CV folds are of comparable size. This
-#' restriction is not applied when comparing \code{"selection"} or
-#' \code{"model"} options (\code{gene_level_fc} cannot appear as a choice
-#' there) and does not attempt to reconcile with
-#' \code{selection_params$dearseq_mode = "paired"}, which operates upstream
-#' of engineering and is unaffected by this restriction.
+#' restriction is not applied when comparing \code{"selection"},
+#' \code{"model"}, \code{"predictors"}, or \code{"response"} options
+#' (\code{gene_level_fc} cannot appear as a choice there) and does not attempt
+#' to reconcile with \code{selection_params$dearseq_mode = "paired"}, which
+#' operates upstream of engineering and is unaffected by this restriction.
+#'
+#' **Reference \code{X}/\code{Y}**: for \code{option_type = "predictors"} and
+#' \code{"response"} respectively, \code{reference_params$X} and
+#' \code{reference_params$Y} specify the fixed value used for the
+#' \code{"Reference"} row (and, for \code{"response"}, the \code{"Baseline"}
+#' row). If not supplied, they default to the \code{X}/\code{Y} arguments,
+#' so a call that does not set them behaves exactly as if the top-level
+#' \code{X}/\code{Y} were the reference predictor set/response. These
+#' elements of \code{reference_params} are ignored for all other
+#' \code{option_type} values.
 #'
 #' **Error handling**: each of the \code{K + 2} pipeline fits (baseline,
 #' reference, and the \code{K} options) is wrapped in its own error handler.
@@ -87,22 +120,27 @@
 #'   the reference pipeline and all \code{K} options. Passed to
 #'   \code{\link{predict_cv}} unchanged (the baseline model always uses
 #'   \code{X = NULL} internally regardless of this argument).
-#' @param option_type Character string. Which pipeline stage varies across
+#' @param option_type Character string. Which axis varies across
 #'   \code{option_choices}. One of \code{"selection"}, \code{"engineering"},
-#'   or \code{"model"}.
-#' @param option_choices A list of \code{K} parameter lists, one per
-#'   alternative pipeline. Each element has the same structure as
+#'   \code{"model"}, \code{"predictors"}, or \code{"response"}.
+#' @param option_choices A list of \code{K} elements, one per alternative
+#'   pipeline. Each element has the same structure as
 #'   \code{selection_params} (\code{option_type = "selection"}),
-#'   \code{engineering_params} (\code{"engineering"}), or \code{model_params}
-#'   (\code{"model"}) in \code{\link{predict_cv}}. May be named to control
-#'   the labels used in the returned results and plot; see Details.
+#'   \code{engineering_params} (\code{"engineering"}), \code{model_params}
+#'   (\code{"model"}) in \code{\link{predict_cv}}, a numeric matrix replacing
+#'   \code{X} (\code{"predictors"}), or a numeric vector replacing \code{Y}
+#'   (\code{"response"}). May be named to control the labels used in the
+#'   returned results and plot; see Details.
 #' @param reference_params A named list with elements \code{engineering_params},
-#'   \code{selection_params}, and \code{model_params}, specifying the fixed
-#'   reference pipeline. Whichever of these corresponds to \code{option_type}
-#'   is overridden by each element of \code{option_choices} in turn; the
-#'   other two are held fixed for the reference and all \code{K} options.
-#'   Defaults to \code{list(engineering_params = NULL, selection_params =
-#'   NULL, model_params = list(method = "lm"))}.
+#'   \code{selection_params}, \code{model_params}, \code{X}, and \code{Y},
+#'   specifying the fixed reference pipeline. Whichever of these corresponds
+#'   to \code{option_type} is overridden by each element of
+#'   \code{option_choices} in turn; the rest are held fixed for the reference
+#'   and all \code{K} options. \code{X} and \code{Y} are only relevant for
+#'   \code{option_type = "predictors"}/\code{"response"} respectively (see
+#'   Details) and default to the \code{X}/\code{Y} arguments when not
+#'   supplied. Defaults to \code{list(engineering_params = NULL,
+#'   selection_params = NULL, model_params = list(method = "lm"))}.
 #' @param cv_type,folds,seed,outside_cv,treatment,treatment_predictor,covariates,individual_id,timepoint
 #'   As in \code{\link{predict_cv}}, applied identically to the baseline,
 #'   reference, and all \code{K} options (subject to the gene_level_fc row
@@ -159,6 +197,26 @@
 #' )
 #' print(cmp)
 #' plot(cmp)
+#'
+#' # Compare candidate predictor panels (X varies, Y fixed)
+#' cmp_x <- compare_pipelines(
+#'   Y = Y, X = X,
+#'   option_type    = "predictors",
+#'   option_choices = list(
+#'     first_half  = X[, 1:50],
+#'     second_half = X[, 51:100]
+#'   ),
+#'   reference_params = list(model_params = list(method = "glmnet"))
+#' )
+#'
+#' # Compare candidate response variables (Y varies, X fixed)
+#' Y2 <- X[, 2] * 2 + rnorm(n)
+#' cmp_y <- compare_pipelines(
+#'   Y = Y, X = X,
+#'   option_type    = "response",
+#'   option_choices = list(alt_response = Y2),
+#'   reference_params = list(model_params = list(method = "glmnet"))
+#' )
 #' }
 #'
 #' @export
@@ -189,9 +247,10 @@ compare_pipelines <- function(Y,
   # ---------------------------------------------------------------------------
   # 1. Validate
   # ---------------------------------------------------------------------------
-  if (!option_type %in% c("selection", "engineering", "model"))
+  if (!option_type %in% c("selection", "engineering", "model", "predictors",
+                          "response"))
     stop("[predictomics] option_type must be one of 'selection', ",
-         "'engineering', or 'model'.", call. = FALSE)
+         "'engineering', 'model', 'predictors', or 'response'.", call. = FALSE)
 
   if (!is.list(option_choices) || length(option_choices) == 0L)
     stop("[predictomics] option_choices must be a non-empty list.",
@@ -208,11 +267,62 @@ compare_pipelines <- function(Y,
   ref_engineering <- reference_params$engineering_params
   ref_selection   <- reference_params$selection_params
   ref_model       <- reference_params$model_params %||% list(method = "lm")
+  ref_X           <- reference_params$X %||% X
+  ref_Y           <- reference_params$Y %||% Y
+
+  # reference_params$X / $Y, if supplied, must be dimensionally consistent
+  # with the reference Y / X respectively (defaulting to the top-level
+  # arguments when not supplied, so a call that doesn't set them behaves as
+  # if X/Y were themselves the reference predictor set/response)
+  if (!is.null(reference_params$X)) {
+    if (!is.matrix(reference_params$X) || !is.numeric(reference_params$X) ||
+        nrow(reference_params$X) != length(Y))
+      stop("[predictomics] reference_params$X, if supplied, must be a ",
+           "numeric matrix with nrow(.) == length(Y) (", length(Y), ").",
+           call. = FALSE)
+  }
+  if (!is.null(reference_params$Y)) {
+    n_ref <- if (!is.null(X)) nrow(X) else length(Y)
+    if (!is.numeric(reference_params$Y) || !is.null(dim(reference_params$Y)) ||
+        length(reference_params$Y) != n_ref)
+      stop("[predictomics] reference_params$Y, if supplied, must be a ",
+           "numeric vector with length ", n_ref, " (nrow(X), or length(Y) ",
+           "if X is NULL).", call. = FALSE)
+  }
+
+  # option_choices content validation for the data-varying option types
+  if (option_type == "predictors") {
+    bad_type <- !vapply(option_choices, function(o)
+      is.matrix(o) && is.numeric(o), logical(1))
+    if (any(bad_type))
+      stop("[predictomics] For option_type = 'predictors', every element of ",
+           "option_choices must be a numeric matrix.", call. = FALSE)
+    bad_n <- vapply(option_choices, function(o) nrow(o) != length(Y), logical(1))
+    if (any(bad_n))
+      stop("[predictomics] For option_type = 'predictors', every element of ",
+           "option_choices must have nrow(.) == length(Y) (", length(Y),
+           ").", call. = FALSE)
+  }
+  if (option_type == "response") {
+    bad_type <- !vapply(option_choices, function(o)
+      is.numeric(o) && is.null(dim(o)), logical(1))
+    if (any(bad_type))
+      stop("[predictomics] For option_type = 'response', every element of ",
+           "option_choices must be a numeric vector.", call. = FALSE)
+    n_ref <- if (!is.null(X)) nrow(X) else length(Y)
+    bad_n <- vapply(option_choices, function(o) length(o) != n_ref, logical(1))
+    if (any(bad_n))
+      stop("[predictomics] For option_type = 'response', every element of ",
+           "option_choices must have length ", n_ref, " (nrow(X), or ",
+           "length(Y) if X is NULL).", call. = FALSE)
+  }
 
   # ---------------------------------------------------------------------------
   # 2. Label the K options
   # ---------------------------------------------------------------------------
-  option_labels  <- .make_option_labels(option_choices)
+  fallback_label <- if (option_type %in% c("predictors", "response"))
+    option_type else "option"
+  option_labels  <- .make_option_labels(option_choices, fallback_label)
   names(option_choices) <- option_labels
 
   # ---------------------------------------------------------------------------
@@ -244,6 +354,8 @@ compare_pipelines <- function(Y,
     engineering_params = NULL,
     selection_params   = NULL,
     model_params       = ref_model,
+    X_override         = NULL,
+    Y_override         = ref_Y,
     use_X              = FALSE,
     uses_gene_level_fc = FALSE
   )
@@ -253,6 +365,8 @@ compare_pipelines <- function(Y,
     engineering_params = ref_engineering,
     selection_params   = ref_selection,
     model_params       = ref_model,
+    X_override         = ref_X,
+    Y_override         = ref_Y,
     use_X              = TRUE,
     uses_gene_level_fc = ref_uses_gene_level_fc
   )
@@ -266,6 +380,8 @@ compare_pipelines <- function(Y,
         engineering_params = ref_engineering,
         selection_params   = option_choices[[i]],
         model_params       = ref_model,
+        X_override         = NULL,
+        Y_override         = NULL,
         use_X              = TRUE,
         uses_gene_level_fc = FALSE
       ),
@@ -274,6 +390,8 @@ compare_pipelines <- function(Y,
         engineering_params = option_choices[[i]],
         selection_params   = ref_selection,
         model_params       = ref_model,
+        X_override         = NULL,
+        Y_override         = NULL,
         use_X              = TRUE,
         uses_gene_level_fc = option_uses_gene_level_fc[i]
       ),
@@ -282,6 +400,28 @@ compare_pipelines <- function(Y,
         engineering_params = ref_engineering,
         selection_params   = ref_selection,
         model_params       = option_choices[[i]],
+        X_override         = NULL,
+        Y_override         = NULL,
+        use_X              = TRUE,
+        uses_gene_level_fc = FALSE
+      ),
+      predictors = list(
+        role               = "option",
+        engineering_params = ref_engineering,
+        selection_params   = ref_selection,
+        model_params       = ref_model,
+        X_override         = option_choices[[i]],
+        Y_override         = NULL,
+        use_X              = TRUE,
+        uses_gene_level_fc = FALSE
+      ),
+      response = list(
+        role               = "option",
+        engineering_params = ref_engineering,
+        selection_params   = ref_selection,
+        model_params       = ref_model,
+        X_override         = NULL,
+        Y_override         = option_choices[[i]],
         use_X              = TRUE,
         uses_gene_level_fc = FALSE
       )
@@ -305,10 +445,13 @@ compare_pipelines <- function(Y,
 
       restrict <- needs_row_parity && !spec$uses_gene_level_fc
 
+      this_X <- spec$X_override %||% X
+      this_Y <- spec$Y_override %||% Y
+
       data <- if (restrict) {
-        .restrict_to_timepoint1(Y, X, covariates, treatment, timepoint)
+        .restrict_to_timepoint1(this_Y, this_X, covariates, treatment, timepoint)
       } else {
-        list(Y = Y, X = X, covariates = covariates, treatment = treatment)
+        list(Y = this_Y, X = this_X, covariates = covariates, treatment = treatment)
       }
 
       pass_individual_id <- if (restrict) NULL else individual_id
@@ -403,7 +546,8 @@ compare_pipelines <- function(Y,
 #' \code{\link{print.predictomics_comparison}}'s summary.
 #'
 #' @param option_type Character string. One of \code{"selection"},
-#'   \code{"engineering"}, or \code{"model"}.
+#'   \code{"engineering"}, \code{"model"}, \code{"predictors"}, or
+#'   \code{"response"}.
 #' @return A character string.
 #' @keywords internal
 # -----------------------------------------------------------------------------
@@ -412,7 +556,9 @@ compare_pipelines <- function(Y,
     option_type,
     selection   = "feature selection",
     engineering = "engineering",
-    model       = "model choice"
+    model       = "model choice",
+    predictors  = "predictor set",
+    response    = "response variable"
   )
 }
 
@@ -458,18 +604,24 @@ compare_pipelines <- function(Y,
 #' Resolves display labels for each element of \code{option_choices} passed
 #' to \code{\link{compare_pipelines}}. User-supplied names are used where
 #' present, unique, and non-blank. Remaining elements fall back to their
-#' \code{method} element; if this produces duplicates (e.g. two choices
-#' with \code{method = "spearman"}), duplicates are disambiguated by
-#' appending \code{"_1"}, \code{"_2"}, etc, in order of appearance. As a
-#' final safeguard, any labels still duplicated after this (e.g. a
-#' user-supplied name colliding with a generated one) have their index
-#' appended.
+#' \code{method} element (for parameter-list options) or to
+#' \code{fallback_label} (for matrix/vector options, i.e.
+#' \code{option_type \%in\% c("predictors", "response")}); if this produces
+#' duplicates (e.g. two choices with \code{method = "spearman"}, or two
+#' unnamed predictor-set options), duplicates are disambiguated by appending
+#' \code{"_1"}, \code{"_2"}, etc, in order of appearance. As a final
+#' safeguard, any labels still duplicated after this (e.g. a user-supplied
+#' name colliding with a generated one) have their index appended.
 #'
-#' @param option_choices A list of parameter lists, optionally named.
+#' @param option_choices A list of parameter lists, matrices, or vectors,
+#'   optionally named.
+#' @param fallback_label Character string used as the base label for
+#'   elements without a \code{method} element (or that are not lists at
+#'   all). Defaults to \code{"option"}.
 #' @return A character vector of labels, length \code{length(option_choices)}.
 #' @keywords internal
 # -----------------------------------------------------------------------------
-.make_option_labels <- function(option_choices) {
+.make_option_labels <- function(option_choices, fallback_label = "option") {
 
   n <- length(option_choices)
   user_names <- names(option_choices)
@@ -477,9 +629,9 @@ compare_pipelines <- function(Y,
   user_names[is.na(user_names)] <- ""
 
   methods <- vapply(option_choices, function(p) {
-    m <- p$method
+    m <- if (is.list(p)) p$method else NULL
     if (is.null(m) || !is.character(m) || length(m) != 1L || !nzchar(m))
-      "option"
+      fallback_label
     else
       m
   }, character(1))

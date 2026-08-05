@@ -170,9 +170,12 @@ result_baseline
 
 Rather than calling `predict_cv()` repeatedly by hand, `compare_pipelines()`
 fits a baseline pipeline, a reference pipeline, and a set of alternative pipelines that
-vary exactly one stage (`option_type`: `"selection"`, `"engineering"`, or
-`"model"`), in one call. Here we compare three variable selection methods against
-the Pearson-correlation selection method we saw previously:
+vary exactly one axis (`option_type`: `"selection"`, `"engineering"`,
+`"model"`, `"predictors"`, or `"response"` - the last two vary the input
+data itself, comparing candidate predictor sets or candidate outcome
+variables rather than pipeline parameters), in one call. Here we compare
+three variable selection methods against the Pearson-correlation selection
+method we saw previously:
 
 ```{r}
 cmp <- compare_pipelines(

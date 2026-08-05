@@ -342,3 +342,155 @@ test_that("predict_cv's own messages are suppressed, but compare_pipelines's are
   expect_false(any(grepl("Double variable selection", msgs)))
   expect_false(any(grepl("Starting", msgs)))
 })
+
+
+# -----------------------------------------------------------------------------
+# option_type = "predictors" / "response"
+# -----------------------------------------------------------------------------
+
+test_that("compare_pipelines runs a basic predictors comparison", {
+  d <- .make_compare_data()
+
+  cmp <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "predictors",
+    option_choices = list(
+      first_half  = d$X[, 1:10],
+      second_half = d$X[, 11:20]
+    ),
+    reference_params = list(model_params = list(method = "lm")),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  expect_s3_class(cmp, "predictomics_comparison")
+  expect_equal(nrow(cmp$results), 4L)
+  expect_setequal(cmp$results$pipeline,
+                  c("Baseline", "Reference", "first_half", "second_half"))
+
+  # The reference pipeline used the original (full) X: n_features_input == p
+  expect_equal(cmp$fits[["Reference"]]$n_features_input, ncol(d$X))
+  expect_equal(cmp$fits[["first_half"]]$n_features_input, 10L)
+  expect_equal(cmp$fits[["second_half"]]$n_features_input, 10L)
+})
+
+test_that("predictors option respects reference_params$X for the Reference row", {
+  d <- .make_compare_data()
+
+  cmp <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "predictors",
+    option_choices = list(alt = d$X[, 1:5]),
+    reference_params = list(
+      X            = d$X[, 1:8],
+      model_params = list(method = "lm")
+    ),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  expect_equal(cmp$fits[["Reference"]]$n_features_input, 8L)
+  expect_equal(cmp$fits[["alt"]]$n_features_input, 5L)
+})
+
+test_that("predictors option errors informatively on wrong nrow", {
+  d <- .make_compare_data()
+
+  expect_error(
+    compare_pipelines(
+      Y = d$Y, X = d$X,
+      option_type    = "predictors",
+      option_choices = list(bad = d$X[1:5, ]),
+      reference_params = list(model_params = list(method = "lm")),
+      folds   = 4,
+      verbose = FALSE
+    ),
+    "nrow"
+  )
+})
+
+test_that("compare_pipelines runs a basic response comparison", {
+  d <- .make_compare_data()
+  Y_alt <- d$X[, 2] * 3 + rnorm(nrow(d$X))
+
+  cmp <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "response",
+    option_choices = list(alt_response = Y_alt),
+    reference_params = list(model_params = list(method = "lm")),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  expect_s3_class(cmp, "predictomics_comparison")
+  expect_setequal(cmp$results$pipeline,
+                  c("Baseline", "Reference", "alt_response"))
+
+  expect_equal(cmp$fits[["Reference"]]$observed, d$Y, ignore_attr = TRUE)
+  expect_equal(cmp$fits[["alt_response"]]$observed, Y_alt, ignore_attr = TRUE)
+  # Baseline is computed against the reference Y, not the alternate response
+  expect_equal(cmp$fits[["Baseline"]]$observed, d$Y, ignore_attr = TRUE)
+})
+
+test_that("response option respects reference_params$Y for the Reference/Baseline rows", {
+  d <- .make_compare_data()
+  Y_ref <- d$X[, 3] * 2 + rnorm(nrow(d$X))
+  Y_alt <- d$X[, 4] * 2 + rnorm(nrow(d$X))
+
+  cmp <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "response",
+    option_choices = list(alt = Y_alt),
+    reference_params = list(
+      Y            = Y_ref,
+      model_params = list(method = "lm")
+    ),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  expect_equal(cmp$fits[["Reference"]]$observed, Y_ref, ignore_attr = TRUE)
+  expect_equal(cmp$fits[["Baseline"]]$observed, Y_ref, ignore_attr = TRUE)
+  expect_equal(cmp$fits[["alt"]]$observed, Y_alt, ignore_attr = TRUE)
+})
+
+test_that("response option errors informatively on wrong length", {
+  d <- .make_compare_data()
+
+  expect_error(
+    compare_pipelines(
+      Y = d$Y, X = d$X,
+      option_type    = "response",
+      option_choices = list(bad = d$Y[1:5]),
+      reference_params = list(model_params = list(method = "lm")),
+      folds   = 4,
+      verbose = FALSE
+    ),
+    "length"
+  )
+})
+
+test_that("unnamed predictors/response options fall back to option_type-based labels", {
+  d <- .make_compare_data()
+  Y_alt <- d$X[, 2] * 2 + rnorm(nrow(d$X))
+
+  cmp_x <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "predictors",
+    option_choices = list(d$X[, 1:5], d$X[, 6:10]),
+    reference_params = list(model_params = list(method = "lm")),
+    folds   = 4,
+    verbose = FALSE
+  )
+  expect_setequal(names(cmp_x$option_choices), c("predictors_1", "predictors_2"))
+
+  cmp_y <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "response",
+    option_choices = list(Y_alt),
+    reference_params = list(model_params = list(method = "lm")),
+    folds   = 4,
+    verbose = FALSE
+  )
+  expect_setequal(names(cmp_y$option_choices), "response")
+})
