@@ -259,3 +259,74 @@ test_that("predict_engineering recomputes the max on new data", {
   expect_equal(X_test_transformed[, "setA"],
               apply(d_test$X[, d$genesets$setA], 1, max), ignore_attr = TRUE)
 })
+
+
+# -----------------------------------------------------------------------------
+# NA support
+# -----------------------------------------------------------------------------
+
+test_that("col_transform = 'z' tolerates NA via na.rm", {
+  d <- .make_ssgsea_data()
+  X_na <- d$X
+  X_na[1, 1] <- NA
+  X_na[2, 2] <- NA
+
+  params <- list(method = "engineer", col_transform = "z")
+  fit <- run_engineering(X_train = X_na, params = params)
+
+  expect_false(anyNA(fit$fit$col_means))
+  expect_false(anyNA(fit$fit$col_sds))
+  expect_true(anyNA(fit$X_transformed))  # the original NA entries remain NA
+})
+
+test_that("col_transform = 'z' warns and skips a degenerate (< 2 non-missing) column", {
+  d <- .make_ssgsea_data(n = 10)
+  X_na <- d$X
+  X_na[2:10, 1] <- NA  # only 1 non-missing value in column 1
+
+  params <- list(method = "engineer", col_transform = "z")
+  expect_warning(
+    fit <- run_engineering(X_train = X_na, params = params),
+    "fewer than 2 non-missing"
+  )
+  expect_equal(fit$fit$col_sds[["gene1"]], 1)
+})
+
+test_that("mean/median/sum aggregation tolerate NA via na.rm", {
+  d <- .make_ssgsea_data()
+  X_na <- d$X
+  X_na[1, "gene1"] <- NA
+
+  for (m in c("mean", "median", "sum")) {
+    params <- list(method = "engineer", col_transform = "none",
+                   genesets = d$genesets, agg_method = m)
+    fit <- run_engineering(X_train = X_na, params = params)
+    expect_false(anyNA(fit$X_transformed[-1, "setA"]))
+    expect_false(is.na(fit$X_transformed[1, "setA"]))  # only 1/5 genes NA
+  }
+})
+
+test_that("aggregation yields NA when all geneset members are NA for a sample", {
+  d <- .make_ssgsea_data()
+  X_na <- d$X
+  X_na[1, d$genesets$setA] <- NA
+
+  params <- list(method = "engineer", col_transform = "none",
+                 genesets = d$genesets, agg_method = "mean")
+  fit <- run_engineering(X_train = X_na, params = params)
+
+  expect_true(is.na(fit$X_transformed[1, "setA"]))
+  expect_false(anyNA(fit$X_transformed[, "setB"]))
+})
+
+test_that("agg_method %in% c('pc1', 'ssgsea', 'gsva') error informatively on NA", {
+  d <- .make_ssgsea_data()
+  X_na <- d$X
+  X_na[1, 1] <- NA
+
+  for (m in c("pc1", "ssgsea", "gsva")) {
+    params <- list(method = "engineer", col_transform = "none",
+                   genesets = d$genesets, agg_method = m)
+    expect_error(run_engineering(X_train = X_na, params = params), "NA")
+  }
+})

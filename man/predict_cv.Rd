@@ -32,7 +32,12 @@ The predictor matrix. Column names should be feature identifiers. Pass
 TRUE}) are used as predictors, or, if none of those are supplied either,
 the model simply predicts the training-fold mean of \code{Y}. When
 \code{X = NULL}, \code{engineering_params} and \code{selection_params}
-must also be \code{NULL}, since they operate on gene-level features.}
+must also be \code{NULL}, since they operate on gene-level features.
+\code{X} may contain \code{NA} values; support depends on the chosen
+\code{engineering_params$col_transform}/\code{agg_method},
+\code{selection_params$method}, and \code{model_params$impute} - see
+\code{\link{run_engineering}}, \code{\link{run_selection}}, and
+\code{\link{run_model}} for details on which options tolerate \code{NA}.}
 
 \item{cv_type}{Character string. Type of cross-validation. One of
 \code{"kfold"} (K-fold CV) or \code{"loo"} (leave-one-out CV).

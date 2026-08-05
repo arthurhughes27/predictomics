@@ -75,6 +75,14 @@
 #' If \code{genesets = NULL}, Step 2 is skipped and the output of Step 1 is
 #' returned directly.
 #'
+#' **Missing values.** \code{col_transform = "z"} and \code{agg_method \%in\%
+#' c("mean", "median", "sum", "max")} tolerate \code{NA} values in
+#' \code{X_train} (computed with \code{na.rm = TRUE}); a training feature
+#' with fewer than 2 non-missing values is left un-z-scored (with a warning),
+#' and a sample whose geneset members are all \code{NA} is aggregated to
+#' \code{NA}. \code{agg_method \%in\% c("pc1", "ssgsea", "gsva")} do not
+#' support \code{NA} and will error if any is present in \code{X_train}.
+#'
 #' @param X_train Numeric matrix of dimensions n (samples) x p (features).
 #'   Training predictor matrix. Column names must be present and are used to
 #'   match features to genesets.
@@ -178,13 +186,35 @@ run_engineering <- function(X_train, params) {
   # ---------------------------------------------------------------------------
   # 1. Validate inputs
   # ---------------------------------------------------------------------------
-  .validate_X(X_train)
+  .validate_X(X_train, allow_na = TRUE)
   .validate_engineering_params(params)
 
   if (is.null(colnames(X_train))) {
     stop("[predictomics] X_train must have column names for feature engineering.",
          call. = FALSE)
   }
+
+  if (anyNA(X_train) && identical(params$agg_method, "pc1"))
+    stop(
+      "[predictomics] agg_method = 'pc1' does not support NA values in X. ",
+      "Please impute or remove missing values first, or use a different ",
+      "agg_method ('mean', 'median', 'sum', 'max' support NA via na.rm).",
+      call. = FALSE
+    )
+  if (anyNA(X_train) && identical(params$agg_method, "ssgsea"))
+    stop(
+      "[predictomics] agg_method = 'ssgsea' does not support NA values in X. ",
+      "Please impute or remove missing values first, or use a different ",
+      "agg_method ('mean', 'median', 'sum', 'max' support NA via na.rm).",
+      call. = FALSE
+    )
+  if (anyNA(X_train) && identical(params$agg_method, "gsva"))
+    stop(
+      "[predictomics] agg_method = 'gsva' does not support NA values in X. ",
+      "Please impute or remove missing values first, or use a different ",
+      "agg_method ('mean', 'median', 'sum', 'max' support NA via na.rm).",
+      call. = FALSE
+    )
 
   col_transform    <- params$col_transform %||% "none"
   genesets         <- params$genesets
@@ -220,10 +250,22 @@ run_engineering <- function(X_train, params) {
     none = X_train,
 
     z = {
-      col_means <- colMeans(X_train)
-      col_sds   <- apply(X_train, 2, sd)
+      col_means <- colMeans(X_train, na.rm = TRUE)
+      col_sds   <- apply(X_train, 2, sd, na.rm = TRUE)
 
-      zero_var <- col_sds == 0
+      degenerate <- is.na(col_sds)
+      if (any(degenerate)) {
+        warning(
+          "[predictomics] ", sum(degenerate), " feature(s) have fewer than 2 ",
+          "non-missing values in the training set and will not be ",
+          "z-scored: ", paste(colnames(X_train)[degenerate], collapse = ", "),
+          call. = FALSE
+        )
+        col_means[degenerate] <- 0
+        col_sds[degenerate]   <- 1  # avoid division by zero; feature stays as-is
+      }
+
+      zero_var <- !degenerate & col_sds == 0
       if (any(zero_var)) {
         warning(
           "[predictomics] ", sum(zero_var), " feature(s) have zero variance ",
@@ -473,12 +515,15 @@ predict_engineering <- function(fit, X_new) {
         X_agg[, i] <- as.numeric(X_sub_sc %*% ls$loadings)
       }
     } else {
+      all_na <- apply(X_sub, 1, function(x) all(is.na(x)))
+
       X_agg[, i] <- switch(agg_method,
-                           mean   = rowMeans(X_sub),
-                           median = apply(X_sub, 1, median),
-                           sum    = rowSums(X_sub),
-                           max    = apply(X_sub, 1, max)
+                           mean   = rowMeans(X_sub, na.rm = TRUE),
+                           median = apply(X_sub, 1, median, na.rm = TRUE),
+                           sum    = rowSums(X_sub, na.rm = TRUE),
+                           max    = suppressWarnings(apply(X_sub, 1, max, na.rm = TRUE))
       )
+      if (any(all_na)) X_agg[all_na, i] <- NA_real_
     }
   }
 

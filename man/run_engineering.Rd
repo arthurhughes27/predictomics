@@ -138,6 +138,14 @@ below for tuning options.
 }
 If \code{genesets = NULL}, Step 2 is skipped and the output of Step 1 is
 returned directly.
+
+\strong{Missing values.} \code{col_transform = "z"} and \code{agg_method \%in\%
+c("mean", "median", "sum", "max")} tolerate \code{NA} values in
+\code{X_train} (computed with \code{na.rm = TRUE}); a training feature
+with fewer than 2 non-missing values is left un-z-scored (with a warning),
+and a sample whose geneset members are all \code{NA} is aggregated to
+\code{NA}. \code{agg_method \%in\% c("pc1", "ssgsea", "gsva")} do not
+support \code{NA} and will error if any is present in \code{X_train}.
 }
 \examples{
 \dontrun{

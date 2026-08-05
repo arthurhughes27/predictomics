@@ -92,6 +92,13 @@
 #'     (or geneset) supplied.
 #' }
 #'
+#' **Missing values.** \code{"variance"}, \code{"pearson"}, and
+#' \code{"spearman"} tolerate \code{NA} values in \code{X_train} (variance is
+#' computed with \code{na.rm = TRUE}; correlations use
+#' \code{use = "pairwise.complete.obs"}). \code{"relative_gain"},
+#' \code{"rise"}, and \code{"dearseq"} do not support \code{NA} and will
+#' error if any is present in \code{X_train}.
+#'
 #' All scores are computed on \code{X_train} only. The selected feature names
 #' are returned and used in \code{\link{predict_cv}} to subset both
 #' \code{X_train} and \code{X_test} via
@@ -281,7 +288,7 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   # ---------------------------------------------------------------------------
   # 1. Validate inputs
   # ---------------------------------------------------------------------------
-  .validate_X(X_train)
+  .validate_X(X_train, allow_na = TRUE)
   .validate_selection_params(params, p = ncol(X_train))
 
   if (is.null(colnames(X_train)))
@@ -291,6 +298,15 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   method    <- params$method
   top_n     <- params$top_n
   threshold <- params$threshold
+
+  if (anyNA(X_train) && method %in% c("relative_gain", "rise", "dearseq"))
+    stop(
+      "[predictomics] selection_params$method = '", method, "' does not ",
+      "support NA values in X_train. Please impute or remove missing ",
+      "values first, or use a different method ('variance', 'pearson', ",
+      "'spearman' support NA via na.rm/pairwise-complete observations).",
+      call. = FALSE
+    )
 
   # Supervised methods require Y_train
   if (method %in% c("pearson", "spearman", "relative_gain", "rise")) {
@@ -423,15 +439,19 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
     scores <- switch(method,
 
                      variance = {
-                       apply(X_train, 2, var)
+                       apply(X_train, 2, var, na.rm = TRUE)
                      },
 
                      pearson = {
-                       apply(X_train, 2, function(x) abs(cor(x, Y_train, method = "pearson")))
+                       apply(X_train, 2, function(x)
+                         abs(cor(x, Y_train, method = "pearson",
+                                 use = "pairwise.complete.obs")))
                      },
 
                      spearman = {
-                       apply(X_train, 2, function(x) abs(cor(x, Y_train, method = "spearman")))
+                       apply(X_train, 2, function(x)
+                         abs(cor(x, Y_train, method = "spearman",
+                                 use = "pairwise.complete.obs")))
                      },
 
                      relative_gain = {

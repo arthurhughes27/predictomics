@@ -89,3 +89,55 @@ test_that("predict_cv completes when selection top_n exceeds the number of avail
 
   expect_equal(length(result$observed), nrow(d$X))
 })
+
+
+# -----------------------------------------------------------------------------
+# NA support
+# -----------------------------------------------------------------------------
+
+test_that("variance/pearson/spearman tolerate NA in X_train", {
+  d <- .make_selection_data()
+  X_na <- d$X
+  X_na[1, 1] <- NA
+  X_na[3, 2] <- NA
+
+  for (m in c("variance", "pearson", "spearman")) {
+    res <- run_selection(
+      X_train = X_na, Y_train = d$Y,
+      params  = list(method = m, top_n = 3)
+    )
+    expect_false(any(is.na(res$selection_scores)))
+  }
+})
+
+test_that("relative_gain/rise/dearseq error informatively when X_train has NA", {
+  d <- .make_selection_data()
+  X_na <- d$X
+  X_na[1, 1] <- NA
+
+  expect_error(
+    run_selection(
+      X_train = X_na, Y_train = d$Y,
+      params  = list(method = "relative_gain", top_n = 3)
+    ),
+    "does not support NA"
+  )
+
+  expect_error(
+    run_selection(
+      X_train = X_na, Y_train = d$Y,
+      treatment = rep(c(0, 1), length.out = nrow(X_na)),
+      params  = list(method = "rise", top_n = 3, rise_epsilon = 0.1)
+    ),
+    "does not support NA"
+  )
+
+  expect_error(
+    run_selection(
+      X_train = X_na, Y_train = d$Y,
+      treatment = rep(c(0, 1), length.out = nrow(X_na)),
+      params  = list(method = "dearseq", top_n = 3)
+    ),
+    "does not support NA"
+  )
+})

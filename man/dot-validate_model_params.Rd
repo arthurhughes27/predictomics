@@ -17,6 +17,7 @@ Invisibly returns \code{NULL} if validation passes.
 }
 \description{
 Checks that \code{model_params} specifies a supported method and that
-tuning-related arguments are consistent and valid.
+tuning-related arguments (including \code{impute}) are consistent and
+valid.
 }
 \keyword{internal}
