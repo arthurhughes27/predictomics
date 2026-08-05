@@ -8,7 +8,8 @@
 }
 \arguments{
 \item{option_type}{Character string. One of \code{"selection"},
-\code{"engineering"}, or \code{"model"}.}
+\code{"engineering"}, \code{"model"}, \code{"predictors"}, or
+\code{"response"}.}
 }
 \value{
 A character string.

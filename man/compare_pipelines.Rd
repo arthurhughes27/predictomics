@@ -32,24 +32,29 @@ the reference pipeline and all \code{K} options. Passed to
 \code{\link{predict_cv}} unchanged (the baseline model always uses
 \code{X = NULL} internally regardless of this argument).}
 
-\item{option_type}{Character string. Which pipeline stage varies across
+\item{option_type}{Character string. Which axis varies across
 \code{option_choices}. One of \code{"selection"}, \code{"engineering"},
-or \code{"model"}.}
+\code{"model"}, \code{"predictors"}, or \code{"response"}.}
 
-\item{option_choices}{A list of \code{K} parameter lists, one per
-alternative pipeline. Each element has the same structure as
+\item{option_choices}{A list of \code{K} elements, one per alternative
+pipeline. Each element has the same structure as
 \code{selection_params} (\code{option_type = "selection"}),
-\code{engineering_params} (\code{"engineering"}), or \code{model_params}
-(\code{"model"}) in \code{\link{predict_cv}}. May be named to control
-the labels used in the returned results and plot; see Details.}
+\code{engineering_params} (\code{"engineering"}), \code{model_params}
+(\code{"model"}) in \code{\link{predict_cv}}, a numeric matrix replacing
+\code{X} (\code{"predictors"}), or a numeric vector replacing \code{Y}
+(\code{"response"}). May be named to control the labels used in the
+returned results and plot; see Details.}
 
 \item{reference_params}{A named list with elements \code{engineering_params},
-\code{selection_params}, and \code{model_params}, specifying the fixed
-reference pipeline. Whichever of these corresponds to \code{option_type}
-is overridden by each element of \code{option_choices} in turn; the
-other two are held fixed for the reference and all \code{K} options.
-Defaults to \code{list(engineering_params = NULL, selection_params =
-NULL, model_params = list(method = "lm"))}.}
+\code{selection_params}, \code{model_params}, \code{X}, and \code{Y},
+specifying the fixed reference pipeline. Whichever of these corresponds
+to \code{option_type} is overridden by each element of
+\code{option_choices} in turn; the rest are held fixed for the reference
+and all \code{K} options. \code{X} and \code{Y} are only relevant for
+\code{option_type = "predictors"}/\code{"response"} respectively (see
+Details) and default to the \code{X}/\code{Y} arguments when not
+supplied. Defaults to \code{list(engineering_params = NULL,
+selection_params = NULL, model_params = list(method = "lm"))}.}
 
 \item{cv_type, folds, seed, outside_cv, treatment, treatment_predictor, covariates, individual_id, timepoint}{As in \code{\link{predict_cv}}, applied identically to the baseline,
 reference, and all \code{K} options (subject to the gene_level_fc row
@@ -94,9 +99,10 @@ overloading system resources, regardless of any \code{future} plan set for
 \code{predict_cv}'s own inner CV loop.
 }
 \details{
-Exactly one of \code{engineering_params}, \code{selection_params}, or
-\code{model_params} varies across the \code{K} alternative pipelines,
-selected by \code{option_type}:
+Exactly one axis varies across the \code{K} alternative pipelines, selected
+by \code{option_type}. Four axes are supported: the three pipeline stages
+(\code{engineering_params}, \code{selection_params}, \code{model_params})
+and the input data itself (\code{X} or \code{Y}):
 \itemize{
 \item \code{"selection"}: each element of \code{option_choices}
 replaces \code{reference_params$selection_params}; engineering and
@@ -107,6 +113,23 @@ model choice are held fixed.
 \item \code{"model"}: each element of \code{option_choices} replaces
 \code{reference_params$model_params}; selection and engineering are
 held fixed.
+\item \code{"predictors"}: each element of \code{option_choices} is a
+numeric matrix (with \code{nrow(.) == length(Y)}) that replaces
+\code{X} for that pipeline; \code{engineering_params},
+\code{selection_params}, and \code{model_params} are held fixed at
+their reference values, and \code{Y} is held fixed at its reference
+value (\code{reference_params$Y}, or the \code{Y} argument if not
+supplied). Useful for comparing candidate predictor panels (e.g.
+different omics layers, or gene subsets) under an otherwise identical
+pipeline.
+\item \code{"response"}: each element of \code{option_choices} is a
+numeric vector (with length matching the reference \code{X}'s
+\code{nrow}, or \code{length(Y)} if \code{X = NULL}) that replaces
+\code{Y} for that pipeline; \code{X}, \code{engineering_params},
+\code{selection_params}, and \code{model_params} are held fixed at
+their reference values (\code{reference_params$X}, or the \code{X}
+argument if not supplied). Useful for comparing how well the same
+predictor set predicts several candidate outcome variables.
 }
 \code{option_choices} should not include a configuration identical to the
 reference's corresponding stage; \code{compare_pipelines()} does not check
@@ -115,7 +138,12 @@ for or de-duplicate this.
 The \strong{baseline model} always uses \code{X = NULL} (see
 \code{\link{predict_cv}}), i.e. \code{engineering_params} and
 \code{selection_params} are both \code{NULL}, but reuses
-\code{reference_params$model_params} as its model choice.
+\code{reference_params$model_params} as its model choice. For
+\code{option_type = "response"}, the baseline is computed against the
+single reference \code{Y} only (\code{reference_params$Y}, or the
+\code{Y} argument); its metrics are therefore directly comparable to the
+\code{"Reference"} row but not necessarily to the \code{K} response
+options, which predict a different variable.
 
 \strong{gene_level_fc row parity}: if \code{option_type = "engineering"} and
 at least one of the reference or the \code{K} options has
@@ -126,11 +154,21 @@ data restricted to \code{timepoint == 1} rows before fitting. This
 matches the one-row-per-individual structure produced by
 \code{gene_level_fc}, so that all pipelines are compared on the same
 number of observations and CV folds are of comparable size. This
-restriction is not applied when comparing \code{"selection"} or
-\code{"model"} options (\code{gene_level_fc} cannot appear as a choice
-there) and does not attempt to reconcile with
-\code{selection_params$dearseq_mode = "paired"}, which operates upstream
-of engineering and is unaffected by this restriction.
+restriction is not applied when comparing \code{"selection"},
+\code{"model"}, \code{"predictors"}, or \code{"response"} options
+(\code{gene_level_fc} cannot appear as a choice there) and does not attempt
+to reconcile with \code{selection_params$dearseq_mode = "paired"}, which
+operates upstream of engineering and is unaffected by this restriction.
+
+\strong{Reference \code{X}/\code{Y}}: for \code{option_type = "predictors"} and
+\code{"response"} respectively, \code{reference_params$X} and
+\code{reference_params$Y} specify the fixed value used for the
+\code{"Reference"} row (and, for \code{"response"}, the \code{"Baseline"}
+row). If not supplied, they default to the \code{X}/\code{Y} arguments,
+so a call that does not set them behaves exactly as if the top-level
+\code{X}/\code{Y} were the reference predictor set/response. These
+elements of \code{reference_params} are ignored for all other
+\code{option_type} values.
 
 \strong{Error handling}: each of the \code{K + 2} pipeline fits (baseline,
 reference, and the \code{K} options) is wrapped in its own error handler.
@@ -178,6 +216,26 @@ cmp <- compare_pipelines(
 )
 print(cmp)
 plot(cmp)
+
+# Compare candidate predictor panels (X varies, Y fixed)
+cmp_x <- compare_pipelines(
+  Y = Y, X = X,
+  option_type    = "predictors",
+  option_choices = list(
+    first_half  = X[, 1:50],
+    second_half = X[, 51:100]
+  ),
+  reference_params = list(model_params = list(method = "glmnet"))
+)
+
+# Compare candidate response variables (Y varies, X fixed)
+Y2 <- X[, 2] * 2 + rnorm(n)
+cmp_y <- compare_pipelines(
+  Y = Y, X = X,
+  option_type    = "response",
+  option_choices = list(alt_response = Y2),
+  reference_params = list(model_params = list(method = "glmnet"))
+)
 }
 
 }

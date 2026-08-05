@@ -4,10 +4,15 @@
 \alias{.make_option_labels}
 \title{Generate distinguishing labels for a list of option_choices}
 \usage{
-.make_option_labels(option_choices)
+.make_option_labels(option_choices, fallback_label = "option")
 }
 \arguments{
-\item{option_choices}{A list of parameter lists, optionally named.}
+\item{option_choices}{A list of parameter lists, matrices, or vectors,
+optionally named.}
+
+\item{fallback_label}{Character string used as the base label for
+elements without a \code{method} element (or that are not lists at
+all). Defaults to \code{"option"}.}
 }
 \value{
 A character vector of labels, length \code{length(option_choices)}.
@@ -16,11 +21,13 @@ A character vector of labels, length \code{length(option_choices)}.
 Resolves display labels for each element of \code{option_choices} passed
 to \code{\link{compare_pipelines}}. User-supplied names are used where
 present, unique, and non-blank. Remaining elements fall back to their
-\code{method} element; if this produces duplicates (e.g. two choices
-with \code{method = "spearman"}), duplicates are disambiguated by
-appending \code{"_1"}, \code{"_2"}, etc, in order of appearance. As a
-final safeguard, any labels still duplicated after this (e.g. a
-user-supplied name colliding with a generated one) have their index
-appended.
+\code{method} element (for parameter-list options) or to
+\code{fallback_label} (for matrix/vector options, i.e.
+\code{option_type \%in\% c("predictors", "response")}); if this produces
+duplicates (e.g. two choices with \code{method = "spearman"}, or two
+unnamed predictor-set options), duplicates are disambiguated by appending
+\code{"_1"}, \code{"_2"}, etc, in order of appearance. As a final
+safeguard, any labels still duplicated after this (e.g. a user-supplied
+name colliding with a generated one) have their index appended.
 }
 \keyword{internal}
