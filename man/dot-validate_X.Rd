@@ -4,16 +4,22 @@
 \alias{.validate_X}
 \title{Validate the predictor matrix X}
 \usage{
-.validate_X(X)
+.validate_X(X, allow_na = FALSE)
 }
 \arguments{
 \item{X}{The predictor matrix passed to a predictomics function.}
+
+\item{allow_na}{Logical. If \code{FALSE} (default), errors when \code{X}
+contains any \code{NA}. Defaults to \code{FALSE}.}
 }
 \value{
 Invisibly returns \code{NULL} if validation passes.
 }
 \description{
-Checks that \code{X} is a numeric matrix with at least one feature and no
-\code{NA} values.
+Checks that \code{X} is a numeric matrix with at least one feature. By
+default also checks for \code{NA} values, since most callers require
+complete data; callers whose downstream logic explicitly supports missing
+values (see individual engineering/selection/model options) pass
+\code{allow_na = TRUE} and perform their own, more specific NA handling.
 }
 \keyword{internal}

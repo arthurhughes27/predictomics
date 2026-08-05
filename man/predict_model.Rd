@@ -12,7 +12,10 @@ predict_model(fit, X_new)
 
 \item{X_new}{Numeric matrix. New predictor matrix. Must have the same
 column names as the training matrix passed to \code{\link{run_model}}
-(pre-sanitisation).}
+(pre-sanitisation). May contain \code{NA} if \code{fit} was produced with
+\code{model_params$impute != "none"}, in which case the training-fold
+fill values stored in \code{fit} are reapplied before prediction;
+otherwise \code{NA} in \code{X_new} raises an informative error.}
 }
 \value{
 A numeric vector of predicted values of length \code{nrow(X_new)}.

@@ -243,3 +243,60 @@
 
   model.matrix(~ ., data = cov_df)
 }
+
+
+# -----------------------------------------------------------------------------
+#' Impute missing values in a predictor matrix by per-column fill value
+#'
+#' @description
+#' Fills \code{NA} values in \code{X} column-by-column, either computing a new
+#' fill value per column (mean or median, ignoring \code{NA}) or applying
+#' previously computed fill values. Used to implement \code{model_params$impute}
+#' in \code{\link{run_model}}/\code{\link{predict_model}}: fill values are
+#' always computed on the training fold and reapplied to the test fold, to
+#' avoid data leakage.
+#'
+#' @param X Numeric matrix, possibly containing \code{NA}.
+#' @param method Character string. One of \code{"mean"} or \code{"median"}.
+#'   Ignored when \code{fill_values} is supplied.
+#' @param fill_values Named numeric vector of per-column fill values (as
+#'   returned in the \code{values} element on a prior call with
+#'   \code{fill_values = NULL}), or \code{NULL} (default) to compute fill
+#'   values from \code{X} itself.
+#'
+#' @return A named list with:
+#'   \describe{
+#'     \item{\code{X}}{The imputed matrix, with the same dimensions and
+#'       dimnames as the input.}
+#'     \item{\code{values}}{Named numeric vector of the fill value used for
+#'       each column (matched to \code{colnames(X)}).}
+#'   }
+#'
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.impute_matrix <- function(X, method = c("mean", "median"), fill_values = NULL) {
+
+  method <- match.arg(method)
+
+  if (is.null(fill_values)) {
+
+    fill_values <- apply(X, 2, method, na.rm = TRUE)
+    names(fill_values) <- colnames(X)
+
+    fully_na <- is.nan(fill_values)
+    if (any(fully_na))
+      stop(
+        "[predictomics] Cannot impute the following column(s): all values ",
+        "are NA in the training fold: ",
+        paste(colnames(X)[fully_na], collapse = ", "), ".",
+        call. = FALSE
+      )
+  }
+
+  for (j in colnames(X)) {
+    na_rows <- is.na(X[, j])
+    if (any(na_rows)) X[na_rows, j] <- fill_values[[j]]
+  }
+
+  list(X = X, values = fill_values)
+}

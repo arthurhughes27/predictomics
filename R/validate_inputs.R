@@ -42,23 +42,29 @@
 #' Validate the predictor matrix X
 #'
 #' @description
-#' Checks that \code{X} is a numeric matrix with at least one feature and no
-#' \code{NA} values.
+#' Checks that \code{X} is a numeric matrix with at least one feature. By
+#' default also checks for \code{NA} values, since most callers require
+#' complete data; callers whose downstream logic explicitly supports missing
+#' values (see individual engineering/selection/model options) pass
+#' \code{allow_na = TRUE} and perform their own, more specific NA handling.
 #'
 #' @param X The predictor matrix passed to a predictomics function.
+#' @param allow_na Logical. If \code{FALSE} (default), errors when \code{X}
+#'   contains any \code{NA}. Defaults to \code{FALSE}.
 #' @return Invisibly returns \code{NULL} if validation passes.
 #' @keywords internal
 # -----------------------------------------------------------------------------
-.validate_X <- function(X) {
+.validate_X <- function(X, allow_na = FALSE) {
 
   if (!is.matrix(X) || !is.numeric(X))
     stop("[predictomics] X must be a numeric matrix.", call. = FALSE)
   if (nrow(X) < 2L || ncol(X) < 1L)
     stop("[predictomics] X must have at least 2 rows (samples) and 1 column ",
          "(feature).", call. = FALSE)
-  if (anyNA(X))
-    stop("[predictomics] X contains NA values. Please impute or remove them.",
-         call. = FALSE)
+  if (!allow_na && anyNA(X))
+    stop("[predictomics] X contains NA values. Please impute or remove them, ",
+         "or use an engineering/selection/model option that supports missing ",
+         "values (see ?predict_cv for details).", call. = FALSE)
 
   invisible(NULL)
 }
@@ -336,7 +342,8 @@
 #'
 #' @description
 #' Checks that \code{model_params} specifies a supported method and that
-#' tuning-related arguments are consistent and valid.
+#' tuning-related arguments (including \code{impute}) are consistent and
+#' valid.
 #'
 #' @param params The \code{model_params} list.
 #' @param n_train Integer. Number of training samples, used to bound
@@ -386,6 +393,12 @@
   if (!is.numeric(fold_id) || length(fold_id) != 1L)
     stop("[predictomics] model_params$fold_id must be a single numeric value.",
          call. = FALSE)
+
+  # impute
+  impute <- params$impute %||% "none"
+  if (!impute %in% c("none", "mean", "median"))
+    stop("[predictomics] model_params$impute must be one of 'none', 'mean', ",
+         "or 'median'.", call. = FALSE)
 
   invisible(NULL)
 }

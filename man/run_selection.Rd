@@ -237,6 +237,13 @@ row-restricted) comparison but scoring always considers every gene
 (or geneset) supplied.
 }
 
+\strong{Missing values.} \code{"variance"}, \code{"pearson"}, and
+\code{"spearman"} tolerate \code{NA} values in \code{X_train} (variance is
+computed with \code{na.rm = TRUE}; correlations use
+\code{use = "pairwise.complete.obs"}). \code{"relative_gain"},
+\code{"rise"}, and \code{"dearseq"} do not support \code{NA} and will
+error if any is present in \code{X_train}.
+
 All scores are computed on \code{X_train} only. The selected feature names
 are returned and used in \code{\link{predict_cv}} to subset both
 \code{X_train} and \code{X_test} via

@@ -29,6 +29,15 @@ evaluate, or \code{NULL} to use the caret default grid. Optional.}
 \item{\code{fold_id}}{Integer. Outer fold index, stored in the result
 for reference. Defaults to \code{0}. Reproducibility is managed by
 \code{future.apply} at the outer CV level.}
+\item{\code{impute}}{Character string. One of \code{"none"} (default),
+\code{"mean"}, or \code{"median"}. If \code{X_train} contains
+\code{NA} and \code{impute != "none"}, per-column fill values (mean
+or median, ignoring \code{NA}) are computed on \code{X_train} and
+used to fill missing values before fitting; the same fill values are
+stored in the returned fit object and reapplied to \code{X_new} in
+\code{\link{predict_model}}, avoiding data leakage from the test
+fold. If \code{X_train} contains \code{NA} and
+\code{impute = "none"}, an informative error is raised.}
 }}
 }
 \value{
@@ -50,6 +59,12 @@ when alpha > 0. \code{NULL} for all other methods and \code{"ridge"}.}
 coefficient values for selected features, sorted by decreasing
 absolute value. \code{NULL} when \code{selected_features} is
 \code{NULL}.}
+\item{\code{impute_method}}{Character string. The \code{impute} method
+used (\code{"none"}, \code{"mean"}, or \code{"median"}).}
+\item{\code{impute_values}}{Named numeric vector of per-column fill
+values used to impute \code{X_train}, or \code{NULL} if
+\code{impute = "none"}. Reapplied to \code{X_new} by
+\code{\link{predict_model}}.}
 }
 }
 \description{

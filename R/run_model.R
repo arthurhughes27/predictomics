@@ -79,6 +79,15 @@
 #'     \item{\code{fold_id}}{Integer. Outer fold index, stored in the result
 #'       for reference. Defaults to \code{0}. Reproducibility is managed by
 #'       \code{future.apply} at the outer CV level.}
+#'     \item{\code{impute}}{Character string. One of \code{"none"} (default),
+#'       \code{"mean"}, or \code{"median"}. If \code{X_train} contains
+#'       \code{NA} and \code{impute != "none"}, per-column fill values (mean
+#'       or median, ignoring \code{NA}) are computed on \code{X_train} and
+#'       used to fill missing values before fitting; the same fill values are
+#'       stored in the returned fit object and reapplied to \code{X_new} in
+#'       \code{\link{predict_model}}, avoiding data leakage from the test
+#'       fold. If \code{X_train} contains \code{NA} and
+#'       \code{impute = "none"}, an informative error is raised.}
 #'   }
 #'
 #' @return A named list of class \code{"predictomics_model"} containing:
@@ -99,6 +108,12 @@
 #'       coefficient values for selected features, sorted by decreasing
 #'       absolute value. \code{NULL} when \code{selected_features} is
 #'       \code{NULL}.}
+#'     \item{\code{impute_method}}{Character string. The \code{impute} method
+#'       used (\code{"none"}, \code{"mean"}, or \code{"median"}).}
+#'     \item{\code{impute_values}}{Named numeric vector of per-column fill
+#'       values used to impute \code{X_train}, or \code{NULL} if
+#'       \code{impute = "none"}. Reapplied to \code{X_new} by
+#'       \code{\link{predict_model}}.}
 #'   }
 #'
 #' @seealso \code{\link{predict_model}}, \code{\link{predict_cv}}
@@ -140,7 +155,7 @@ run_model <- function(X_train, Y_train, params) {
   # ---------------------------------------------------------------------------
   # 1. Validate inputs
   # ---------------------------------------------------------------------------
-  .validate_X(X_train)
+  .validate_X(X_train, allow_na = TRUE)
   .validate_Y(Y_train)
   .validate_Y_X_compat(Y_train, X_train)
   .validate_model_params(params, n_train = nrow(X_train))
@@ -157,6 +172,26 @@ run_model <- function(X_train, Y_train, params) {
   tune_grid   <- params$tune_grid
   tune_length <- params$tune_length %||% 3L
   fold_id     <- params$fold_id     %||% 0L
+  impute      <- params$impute      %||% "none"
+
+  # ---------------------------------------------------------------------------
+  # 2b. Impute missing values in X_train (fill values computed on this fold
+  # only, stored below for reapplication to the corresponding test fold via
+  # predict_model())
+  # ---------------------------------------------------------------------------
+  impute_values <- NULL
+  if (impute != "none") {
+    imputed       <- .impute_matrix(X_train, method = impute)
+    X_train       <- imputed$X
+    impute_values <- imputed$values
+  } else if (anyNA(X_train)) {
+    stop(
+      "[predictomics] X_train contains NA values but model_params$impute is ",
+      "'none'. Set model_params$impute to 'mean' or 'median' to impute ",
+      "missing values before model fitting, or remove/impute them upstream.",
+      call. = FALSE
+    )
+  }
 
   # Store the user-supplied method name for the result object
   user_method <- method
@@ -283,7 +318,9 @@ run_model <- function(X_train, Y_train, params) {
       inner_folds       = inner_folds,
       col_names         = clean_names,
       selected_features = selected_features$features,
-      selection_scores  = selected_features$scores
+      selection_scores  = selected_features$scores,
+      impute_method     = impute,
+      impute_values     = impute_values
     ),
     class = "predictomics_model"
   )
@@ -301,7 +338,10 @@ run_model <- function(X_train, Y_train, params) {
 #'   \code{\link{run_model}}.
 #' @param X_new Numeric matrix. New predictor matrix. Must have the same
 #'   column names as the training matrix passed to \code{\link{run_model}}
-#'   (pre-sanitisation).
+#'   (pre-sanitisation). May contain \code{NA} if \code{fit} was produced with
+#'   \code{model_params$impute != "none"}, in which case the training-fold
+#'   fill values stored in \code{fit} are reapplied before prediction;
+#'   otherwise \code{NA} in \code{X_new} raises an informative error.
 #'
 #' @return A numeric vector of predicted values of length \code{nrow(X_new)}.
 #'
@@ -323,7 +363,22 @@ predict_model <- function(fit, X_new) {
     stop("[predictomics] X_new must have column names.", call. = FALSE)
 
   # ---------------------------------------------------------------------------
-  # 2. Sanitise column names to match training
+  # 2. Apply training-fold imputation, if any
+  # ---------------------------------------------------------------------------
+  if (!is.null(fit$impute_values)) {
+    X_new <- .impute_matrix(X_new, method = fit$impute_method,
+                            fill_values = fit$impute_values)$X
+  } else if (anyNA(X_new)) {
+    stop(
+      "[predictomics] X_new contains NA values but the model was fitted with ",
+      "model_params$impute = 'none'. Refit with model_params$impute set to ",
+      "'mean' or 'median' to support missing values in new data.",
+      call. = FALSE
+    )
+  }
+
+  # ---------------------------------------------------------------------------
+  # 3. Sanitise column names to match training
   # ---------------------------------------------------------------------------
   X_df           <- as.data.frame(X_new)
   colnames(X_df) <- make.names(colnames(X_new), unique = TRUE)
@@ -334,7 +389,7 @@ predict_model <- function(fit, X_new) {
          "features in the same order as X_train.", call. = FALSE)
 
   # ---------------------------------------------------------------------------
-  # 3. Predict and return
+  # 4. Predict and return
   # ---------------------------------------------------------------------------
   as.numeric(predict(fit$caret_fit, newdata = X_df))
 }
