@@ -61,7 +61,18 @@
 #' is required downstream. With \code{dearseq_level = "geneset"}, any
 #' geneset in \code{engineering_params$genesets} left with no surviving
 #' genes after the dearseq filter is automatically dropped before
-#' engineering runs (with a message, if \code{verbose = TRUE}).
+#' engineering runs (with a message, if \code{verbose = TRUE}). If
+#' \code{selection_params$dearseq_mode = "paired"} is also specified, this
+#' upfront differential expression filter is a \strong{filtration step only}:
+#' it uses both pre- and post-treatment rows to score genes, but once genes
+#' are selected, the dataset is immediately restricted to post-treatment
+#' (\code{timepoint == 1}) rows for every subsequent stage (engineering,
+#' selection, model fitting, prediction); pre-treatment rows are discarded
+#' and play no further role. This exactly mirrors how
+#' \code{selection_params$rise_paired = TRUE} handles its own paired
+#' filtration step below, so the two paired approaches behave identically
+#' with respect to which rows continue on to modelling. This mode is not
+#' compatible with \code{engineering_params$gene_level_fc = TRUE}.
 #'
 #' If \code{selection_params$method = "rise"} with
 #' \code{selection_params$rise_paired = TRUE} is specified, \code{individual_id}
@@ -74,8 +85,12 @@
 #' an optional model predictor via \code{treatment_predictor}, decoupled from
 #' the RISE pairing). Rows are sorted by \code{individual_id} (then
 #' \code{timepoint}) before fitting, so pre- and post-treatment rows for the
-#' same individual are matched correctly regardless of input row order. This
-#' mode is not compatible with \code{engineering_params$gene_level_fc = TRUE}.
+#' same individual are matched correctly regardless of input row order. As
+#' with \code{dearseq_mode = "paired"} above, RISE screening (the filtration
+#' step) uses both pre- and post-treatment rows, but modelling is then
+#' performed on post-treatment (\code{timepoint == 1}) rows only;
+#' pre-treatment rows are discarded after screening. This mode is not
+#' compatible with \code{engineering_params$gene_level_fc = TRUE}.
 #'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
@@ -197,7 +212,10 @@
 #'     \item{\code{fold_ids}}{Integer vector of fold assignments (1 to
 #'       \code{folds}), in original sample order.}
 #'     \item{\code{treatment}}{The \code{treatment} argument as supplied, or
-#'       \code{NULL}.}
+#'       \code{NULL}. Restricted to post-treatment (\code{timepoint == 1})
+#'       rows, matching \code{observed}/\code{predicted}, when
+#'       \code{selection_params$rise_paired = TRUE} or
+#'       \code{selection_params$dearseq_mode = "paired"} is used.}
 #'     \item{\code{treatment_predictor}}{Logical. Whether treatment was used
 #'       as a predictor.}
 #'     \item{\code{covariates}}{The \code{covariates} argument as supplied, or
@@ -211,7 +229,23 @@
 #'     \item{\code{outside_cv}}{Logical. Whether outside-CV mode was used.}
 #'     \item{\code{cv_type}}{Character string. The CV type used.}
 #'     \item{\code{n_folds}}{Integer. Number of folds used.}
-#'     \item{\code{n_samples}}{Integer. Number of samples.}
+#'     \item{\code{n_samples}}{Integer. Number of samples. For
+#'       \code{selection_params$rise_paired = TRUE} or
+#'       \code{selection_params$dearseq_mode = "paired"}, this is the
+#'       pre-restriction (both-arms) count, same as \code{n_samples_total};
+#'       see \code{n_samples_modelled} for the post-treatment-only count
+#'       actually used for modelling.}
+#'     \item{\code{n_samples_modelled}}{Integer. Number of samples actually
+#'       used for modelling (i.e. \code{length(observed)}). Equal to
+#'       \code{n_samples} unless \code{selection_params$rise_paired = TRUE}
+#'       or \code{selection_params$dearseq_mode = "paired"} restricted
+#'       modelling to post-treatment rows only.}
+#'     \item{\code{n_samples_total}}{Integer. Same as \code{n_samples}.}
+#'     \item{\code{paired_rise}}{Logical. Whether
+#'       \code{selection_params$rise_paired = TRUE} was used.}
+#'     \item{\code{dearseq_paired}}{Logical. Whether
+#'       \code{selection_params$method = "dearseq"} with
+#'       \code{dearseq_mode = "paired"} was used.}
 #'     \item{\code{n_features_input}}{Integer. Number of features in the input
 #'       \code{X}. \code{0} if \code{X = NULL} (baseline model).}
 #'     \item{\code{baseline_model}}{Logical. Whether a baseline model
@@ -401,15 +435,30 @@ predict_cv <- function(Y,
     )
   }
 
+  # is_dearseq / is_dearseq_paired are determined here (ahead of the dearseq
+  # filtering block below) purely so the gene_level_fc incompatibility check
+  # can live alongside the RISE one above.
+  is_dearseq <- !is.null(selection_params) &&
+    isTRUE(selection_params$method == "dearseq")
+  is_dearseq_paired <- is_dearseq &&
+    identical(selection_params$dearseq_mode %||% "classic", "paired")
+
+  if (is_gene_level_fc && is_dearseq_paired) {
+    stop(
+      "[predictomics] engineering_params$gene_level_fc = TRUE is not ",
+      "compatible with selection_params$method = 'dearseq' with ",
+      "dearseq_mode = 'paired'. Set dearseq_mode = 'classic' (or use a ",
+      "different selection method) to use gene_level_fc.",
+      call. = FALSE
+    )
+  }
+
   # ---------------------------------------------------------------------------
   # 1b2. Apply dearseq upfront gene filtering (before CV, before any
   # engineering - including gene_level_fc - or other selection). Runs on the
   # raw, untransformed data regardless of outside_cv, since differential
   # expression analysis is not meaningful on transformed data.
   # ---------------------------------------------------------------------------
-  is_dearseq <- !is.null(selection_params) &&
-    isTRUE(selection_params$method == "dearseq")
-
   dearseq_selection <- NULL
 
   if (is_dearseq) {
@@ -502,6 +551,59 @@ predict_cv <- function(Y,
           engineering_params$genesets[keep]
       }
     }
+  }
+
+  # ---------------------------------------------------------------------------
+  # 1b3. dearseq_mode = "paired": after the filtration step above (which used
+  # both pre- and post-treatment rows), restrict the dataset to post-treatment
+  # (timepoint == 1) rows for the modelling stage, discarding pre-treatment
+  # rows. This mirrors selection_params$rise_paired = TRUE's row handling
+  # exactly, so that both paired filtration approaches leave the same rows
+  # available for engineering/selection/modelling downstream.
+  # ---------------------------------------------------------------------------
+  n_samples_total_paired <- NULL
+
+  if (is_dearseq_paired) {
+
+    .validate_individual_timepoint_pairing(
+      individual_id = individual_id,
+      timepoint     = timepoint,
+      n             = n,
+      context       = "selection_params$dearseq_mode = 'paired'"
+    )
+
+    if (verbose) {
+      message(
+        "[predictomics] dearseq_mode = 'paired': the differential ",
+        "expression filtering above used both pre- and post-treatment ",
+        "rows. Predictive modelling will be performed on post-treatment ",
+        "samples only (timepoint == 1); pre-treatment samples are ",
+        "discarded from the modelling stage."
+      )
+    }
+
+    keep <- which(timepoint == 1)
+
+    n_samples_total_paired <- n
+
+    X                   <- X[keep, , drop = FALSE]
+    Y                   <- Y[keep]
+    treatment_pipeline  <- if (!is.null(treatment_pipeline))
+      treatment_pipeline[keep] else NULL
+    covariates_pipeline <- if (!is.null(covariates_pipeline))
+      covariates_pipeline[keep, , drop = FALSE] else NULL
+    individual_id       <- individual_id[keep]
+    timepoint           <- timepoint[keep]
+    n                   <- length(Y)
+
+    if (folds > n)
+      stop(
+        "[predictomics] folds (", folds, ") exceeds the number of ",
+        "post-treatment samples (", n, ") after dearseq paired filtering. ",
+        "Reduce 'folds' or use cv_type = 'loo'.",
+        call. = FALSE
+      )
+    folds <- if (cv_type == "loo") n else folds
   }
 
   # ---------------------------------------------------------------------------
@@ -774,12 +876,25 @@ predict_cv <- function(Y,
   # ---------------------------------------------------------------------------
   # 9. Assemble and return result object
   # ---------------------------------------------------------------------------
+  # n_samples/n_samples_total report the pre-restriction (both-arms) count for
+  # either paired filtration approach (RISE-paired or dearseq_mode = "paired"),
+  # mirroring each other exactly; n_samples_modelled always reports the
+  # post-treatment-only count actually used for modelling.
+  is_any_paired_filter <- is_paired_rise || is_dearseq_paired
+  n_samples_total_value <- if (is_paired_rise) {
+    length(Y_full)
+  } else if (is_dearseq_paired) {
+    n_samples_total_paired
+  } else {
+    n
+  }
+
   structure(
     list(
-      observed                            = if (is_paired_rise) Y else Y,
+      observed                            = Y,
       predicted                           = predictions,
       fold_ids                            = fold_ids,
-      treatment                           = if (is_paired_rise) treatment_pipeline_post
+      treatment                           = if (is_any_paired_filter) treatment_pipeline_post
                                             else treatment,
       treatment_predictor                 = treatment_predictor,
       covariates                          = covariates,
@@ -789,10 +904,11 @@ predict_cv <- function(Y,
       outside_cv                          = outside_cv,
       cv_type                             = cv_type,
       n_folds                             = folds,
-      n_samples                           = if (is_paired_rise){length(Y_full)} else {n},
+      n_samples                           = n_samples_total_value,
       n_samples_modelled                  = n,
-      n_samples_total                     = length(Y_full),
+      n_samples_total                     = n_samples_total_value,
       paired_rise                         = is_paired_rise,
+      dearseq_paired                      = is_dearseq_paired,
       n_features_input                    = p,
       baseline_model                      = is_baseline_model,
       dearseq_selection                   = dearseq_selection,
