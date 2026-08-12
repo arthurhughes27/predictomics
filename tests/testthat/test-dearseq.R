@@ -490,3 +490,69 @@ test_that("predict_cv applies dearseq upfront, before gene_level_fc, regardless 
   expect_null(result$outside_cv_selection)
   expect_equal(result$n_samples_modelled, length(unique(d$individual_id)))
 })
+
+
+# -----------------------------------------------------------------------------
+# dearseq_mode = "paired": post-treatment row restriction (harmonised with
+# selection_params$rise_paired = TRUE)
+# -----------------------------------------------------------------------------
+
+test_that("predict_cv restricts to post-treatment rows for dearseq_mode = 'paired', mirroring rise_paired", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+  n_ind <- length(unique(d$individual_id))
+
+  result <- predict_cv(
+    Y = d$Y, X = d$X,
+    selection_params = list(method = "dearseq", dearseq_mode = "paired",
+                            threshold = 1.1),
+    individual_id = d$individual_id,
+    timepoint     = d$timepoint,
+    model_params  = list(method = "lm"),
+    folds   = 3,
+    verbose = FALSE
+  )
+
+  expect_true(result$dearseq_paired)
+  expect_false(result$paired_rise)
+  expect_equal(length(result$observed), n_ind)
+  expect_equal(result$n_samples_modelled, n_ind)
+  expect_equal(result$n_samples, nrow(d$X))
+  expect_equal(result$n_samples_total, nrow(d$X))
+})
+
+test_that("predict_cv's returned treatment matches observed length for dearseq_mode = 'paired'", {
+  testthat::skip_if_not_installed("dearseq")
+  d <- .make_dearseq_data()
+
+  result <- predict_cv(
+    Y = d$Y, X = d$X,
+    selection_params = list(method = "dearseq", dearseq_mode = "paired",
+                            threshold = 1.1),
+    individual_id = d$individual_id,
+    timepoint     = d$timepoint,
+    treatment     = d$treatment,
+    model_params  = list(method = "lm"),
+    folds   = 3,
+    verbose = FALSE
+  )
+
+  expect_equal(length(result$treatment), length(result$observed))
+})
+
+test_that("predict_cv errors informatively when gene_level_fc is combined with dearseq_mode = 'paired'", {
+  d <- .make_dearseq_data()
+
+  expect_error(
+    predict_cv(
+      Y = d$Y, X = d$X,
+      selection_params   = list(method = "dearseq", dearseq_mode = "paired",
+                                threshold = 1.1),
+      engineering_params = list(method = "engineer", gene_level_fc = TRUE),
+      individual_id = d$individual_id,
+      timepoint     = d$timepoint,
+      verbose       = FALSE
+    ),
+    "gene_level_fc"
+  )
+})
