@@ -120,7 +120,10 @@ values, in original sample order.}
 \item{\code{fold_ids}}{Integer vector of fold assignments (1 to
 \code{folds}), in original sample order.}
 \item{\code{treatment}}{The \code{treatment} argument as supplied, or
-\code{NULL}.}
+\code{NULL}. Restricted to post-treatment (\code{timepoint == 1})
+rows, matching \code{observed}/\code{predicted}, when
+\code{selection_params$rise_paired = TRUE} or
+\code{selection_params$dearseq_mode = "paired"} is used.}
 \item{\code{treatment_predictor}}{Logical. Whether treatment was used
 as a predictor.}
 \item{\code{covariates}}{The \code{covariates} argument as supplied, or
@@ -134,7 +137,23 @@ supplied.}
 \item{\code{outside_cv}}{Logical. Whether outside-CV mode was used.}
 \item{\code{cv_type}}{Character string. The CV type used.}
 \item{\code{n_folds}}{Integer. Number of folds used.}
-\item{\code{n_samples}}{Integer. Number of samples.}
+\item{\code{n_samples}}{Integer. Number of samples. For
+\code{selection_params$rise_paired = TRUE} or
+\code{selection_params$dearseq_mode = "paired"}, this is the
+pre-restriction (both-arms) count, same as \code{n_samples_total};
+see \code{n_samples_modelled} for the post-treatment-only count
+actually used for modelling.}
+\item{\code{n_samples_modelled}}{Integer. Number of samples actually
+used for modelling (i.e. \code{length(observed)}). Equal to
+\code{n_samples} unless \code{selection_params$rise_paired = TRUE}
+or \code{selection_params$dearseq_mode = "paired"} restricted
+modelling to post-treatment rows only.}
+\item{\code{n_samples_total}}{Integer. Same as \code{n_samples}.}
+\item{\code{paired_rise}}{Logical. Whether
+\code{selection_params$rise_paired = TRUE} was used.}
+\item{\code{dearseq_paired}}{Logical. Whether
+\code{selection_params$method = "dearseq"} with
+\code{dearseq_mode = "paired"} was used.}
 \item{\code{n_features_input}}{Integer. Number of features in the input
 \code{X}. \code{0} if \code{X = NULL} (baseline model).}
 \item{\code{baseline_model}}{Logical. Whether a baseline model
@@ -220,7 +239,18 @@ use \code{dearseq_level = "geneset"} instead if geneset-level engineering
 is required downstream. With \code{dearseq_level = "geneset"}, any
 geneset in \code{engineering_params$genesets} left with no surviving
 genes after the dearseq filter is automatically dropped before
-engineering runs (with a message, if \code{verbose = TRUE}).
+engineering runs (with a message, if \code{verbose = TRUE}). If
+\code{selection_params$dearseq_mode = "paired"} is also specified, this
+upfront differential expression filter is a \strong{filtration step only}:
+it uses both pre- and post-treatment rows to score genes, but once genes
+are selected, the dataset is immediately restricted to post-treatment
+(\code{timepoint == 1}) rows for every subsequent stage (engineering,
+selection, model fitting, prediction); pre-treatment rows are discarded
+and play no further role. This exactly mirrors how
+\code{selection_params$rise_paired = TRUE} handles its own paired
+filtration step below, so the two paired approaches behave identically
+with respect to which rows continue on to modelling. This mode is not
+compatible with \code{engineering_params$gene_level_fc = TRUE}.
 
 If \code{selection_params$method = "rise"} with
 \code{selection_params$rise_paired = TRUE} is specified, \code{individual_id}
@@ -233,8 +263,12 @@ place of \code{treatment} (which, if supplied, retains its usual role as
 an optional model predictor via \code{treatment_predictor}, decoupled from
 the RISE pairing). Rows are sorted by \code{individual_id} (then
 \code{timepoint}) before fitting, so pre- and post-treatment rows for the
-same individual are matched correctly regardless of input row order. This
-mode is not compatible with \code{engineering_params$gene_level_fc = TRUE}.
+same individual are matched correctly regardless of input row order. As
+with \code{dearseq_mode = "paired"} above, RISE screening (the filtration
+step) uses both pre- and post-treatment rows, but modelling is then
+performed on post-treatment (\code{timepoint == 1}) rows only;
+pre-treatment rows are discarded after screening. This mode is not
+compatible with \code{engineering_params$gene_level_fc = TRUE}.
 
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and
