@@ -218,6 +218,132 @@ test_that("individual_id/timepoint are passed through for non-engineering option
   expect_true("Reference" %in% cmp$results$pipeline)
 })
 
+
+# -----------------------------------------------------------------------------
+# Generalised paired row-discard parity (option_type-agnostic)
+# -----------------------------------------------------------------------------
+
+test_that("compare_pipelines applies row-parity restriction when option_choices mixes a dearseq-paired selection option with non-paired ones", {
+  testthat::skip_if_not_installed("dearseq")
+
+  n_ind <- 15
+  p     <- 6
+  set.seed(4)
+  n <- n_ind * 2
+  individual_id <- rep(seq_len(n_ind), each = 2)
+  timepoint     <- rep(c(0, 1), times = n_ind)
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("gene", seq_len(p))
+  Y <- rnorm(n)
+
+  cmp <- compare_pipelines(
+    Y = Y, X = X,
+    option_type    = "selection",
+    option_choices = list(
+      dearseq_paired = list(method = "dearseq", dearseq_mode = "paired",
+                           threshold = 1.1),
+      correlation    = list(method = "pearson", top_n = 3)
+    ),
+    reference_params = list(
+      selection_params = list(method = "variance", top_n = 3),
+      model_params      = list(method = "lm")
+    ),
+    individual_id = individual_id,
+    timepoint     = timepoint,
+    folds   = 3,
+    verbose = FALSE
+  )
+
+  # The dearseq-paired option discards pre-treatment rows internally; every
+  # other pipeline (a plain correlation option, the non-paired reference, and
+  # the baseline) is externally restricted to timepoint == 1 to match - all
+  # four end up modelling on exactly n_ind rows.
+  expect_equal(cmp$fits[["dearseq_paired"]]$n_samples_modelled, n_ind)
+  expect_equal(cmp$fits[["correlation"]]$n_samples_modelled, n_ind)
+  expect_equal(cmp$fits[["Reference"]]$n_samples_modelled, n_ind)
+  expect_equal(cmp$fits[["Baseline"]]$n_samples_modelled, n_ind)
+})
+
+test_that("compare_pipelines errors informatively for a dearseq-paired selection option without individual_id/timepoint", {
+  d <- .make_compare_data()
+
+  expect_error(
+    compare_pipelines(
+      Y = d$Y, X = d$X,
+      option_type    = "selection",
+      option_choices = list(
+        dearseq_paired = list(method = "dearseq", dearseq_mode = "paired",
+                             threshold = 1.1)
+      ),
+      reference_params = list(
+        selection_params = list(method = "variance", top_n = 3),
+        model_params      = list(method = "lm")
+      ),
+      folds   = 4,
+      verbose = FALSE
+    ),
+    "individual_id"
+  )
+})
+
+test_that("compare_pipelines applies row-parity when only the reference selection_params is rise_paired, for option_type = 'model'", {
+  testthat::skip_if_not_installed("SurrogateRank")
+
+  n_ind <- 15
+  p     <- 6
+  set.seed(5)
+  n <- n_ind * 2
+  individual_id <- rep(seq_len(n_ind), each = 2)
+  timepoint     <- rep(c(0, 1), times = n_ind)
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("gene", seq_len(p))
+  Y <- rnorm(n)
+
+  # selection_params is fixed (rise_paired = TRUE) across the reference and
+  # both model_params options, since option_type = "model" only varies
+  # model_params - so every non-baseline pipeline discards rows internally
+  # via RISE screening, and only the baseline is externally restricted.
+  cmp <- compare_pipelines(
+    Y = Y, X = X,
+    option_type    = "model",
+    option_choices = list(
+      glmnet = list(method = "glmnet", inner_folds = 2)
+    ),
+    reference_params = list(
+      selection_params = list(method = "rise", rise_paired = TRUE,
+                              rise_epsilon = 0.1, threshold = 1.1),
+      model_params      = list(method = "lm")
+    ),
+    individual_id = individual_id,
+    timepoint     = timepoint,
+    folds   = 3,
+    verbose = FALSE
+  )
+
+  expect_equal(cmp$fits[["Reference"]]$n_samples_modelled, n_ind)
+  expect_equal(cmp$fits[["glmnet"]]$n_samples_modelled, n_ind)
+  expect_equal(cmp$fits[["Baseline"]]$n_samples_modelled, n_ind)
+})
+
+test_that(".discards_pretreatment_rows detects gene_level_fc, rise_paired, and dearseq paired mode", {
+  expect_false(.discards_pretreatment_rows(NULL, NULL))
+  expect_true(.discards_pretreatment_rows(
+    list(method = "engineer", gene_level_fc = TRUE), NULL
+  ))
+  expect_true(.discards_pretreatment_rows(
+    NULL, list(method = "rise", rise_paired = TRUE)
+  ))
+  expect_true(.discards_pretreatment_rows(
+    NULL, list(method = "dearseq", dearseq_mode = "paired")
+  ))
+  expect_false(.discards_pretreatment_rows(
+    NULL, list(method = "dearseq", dearseq_mode = "classic")
+  ))
+  expect_false(.discards_pretreatment_rows(
+    NULL, list(method = "pearson", top_n = 5)
+  ))
+})
+
 test_that("print and plot methods run without error", {
   d <- .make_compare_data()
 
