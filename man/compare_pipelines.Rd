@@ -21,6 +21,7 @@ compare_pipelines(
   individual_id = NULL,
   timepoint = NULL,
   metric = "sRMSE",
+  diagnostics = "full",
   verbose = TRUE
 )
 }
@@ -65,6 +66,17 @@ results by default in \code{\link{print.predictomics_comparison}} and
 \code{\link{plot.predictomics_comparison}}. One of \code{"RMSE"},
 \code{"sRMSE"} (default), \code{"R2"}, or \code{"SpearmanR"}.}
 
+\item{diagnostics}{Character string. One of \code{"full"} (default) or
+\code{"summary"}. In \code{"summary"} mode, the full-length
+\code{selection_scores} vector (one score per candidate feature or
+geneset, not just the selected ones) is dropped from
+\code{dearseq_selection}, each element of
+\code{fold_selection_diagnostics}, and \code{outside_cv_selection} in
+every stored fit before it is added to the returned \code{fits} list;
+\code{selected_features} and \code{n_selected} are always kept.
+\code{results} (the summary metrics table) is unaffected either way,
+since it never depends on these fields. See Details ("Memory usage").}
+
 \item{verbose}{Logical. If \code{TRUE}, prints progress messages as each
 pipeline is fit. Defaults to \code{TRUE}.}
 }
@@ -78,7 +90,9 @@ option labels), and columns \code{pipeline}, \code{role} (one of
 \code{"baseline"}, \code{"reference"}, \code{"option"}),
 \code{RMSE}, \code{sRMSE}, \code{R2}, \code{SpearmanR}.}
 \item{\code{fits}}{A named list of the underlying \code{predictomics}
-objects for each successfully-fit pipeline.}
+objects for each successfully-fit pipeline. See \code{diagnostics}
+above for the \code{"summary"} mode that trims their largest
+fields.}
 \item{\code{option_type}}{The \code{option_type} argument.}
 \item{\code{option_choices}}{The (labelled) \code{option_choices}
 argument.}
@@ -201,6 +215,22 @@ two \code{"spearman"} selections at different thresholds), they are
 distinguished by appending \code{"_1"}, \code{"_2"}, etc, in the order
 supplied. User-supplied names are always preferred where present, unique,
 and non-blank.
+
+\strong{Memory usage}: fitting many pipelines against a large \code{X} (many
+features and/or many outer folds) can use substantial memory, since every
+successfully-fit pipeline's full \code{predictomics} object is retained in
+the returned \code{fits} list for the lifetime of the call. Two things
+help: \code{diagnostics = "summary"} (see \code{diagnostics} below) drops
+the largest per-fit fields, and \code{gc()} is called after each of the
+\code{K + 2} pipeline fits so a finished pipeline's temporaries (its
+engineered/restricted data copy, and, in \code{"full"} mode, its
+untrimmed diagnostics) are reclaimed before the next, potentially equally
+large, pipeline is fit, rather than accumulating across the sequential
+loop. If the inner CV loop itself is parallelised (see
+\code{\link{predict_cv}}'s Parallelisation section), note that each
+worker process holds its own copy of \code{X} for the duration of that
+\code{predict_cv} call; a large parallel worker count multiplies memory
+use accordingly and is independent of the settings here.
 }
 \examples{
 \dontrun{
@@ -266,6 +296,22 @@ cmp_paired <- compare_pipelines(
   ),
   individual_id = individual_id,
   timepoint     = timepoint
+)
+
+# For a large X and/or many options, reduce memory usage by dropping the
+# full-length per-feature selection scores from each stored fit
+cmp_lean <- compare_pipelines(
+  Y = Y, X = X,
+  option_type    = "selection",
+  option_choices = list(
+    list(method = "pearson",  top_n = 20),
+    list(method = "spearman", top_n = 20)
+  ),
+  reference_params = list(
+    selection_params = list(method = "variance", top_n = 20),
+    model_params      = list(method = "glmnet")
+  ),
+  diagnostics = "summary"
 )
 }
 
