@@ -90,7 +90,11 @@
 #' step) uses both pre- and post-treatment rows, but modelling is then
 #' performed on post-treatment (\code{timepoint == 1}) rows only;
 #' pre-treatment rows are discarded after screening. This mode is not
-#' compatible with \code{engineering_params$gene_level_fc = TRUE}.
+#' compatible with \code{engineering_params$gene_level_fc = TRUE}. Unlike
+#' \code{selection_params$method = "dearseq"}, RISE has no geneset-level
+#' counterpart: paired RISE screening always operates on the raw, gene-level
+#' predictor matrix, so it is also not compatible with
+#' \code{engineering_params$genesets} (geneset-level engineering).
 #'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
@@ -431,6 +435,28 @@ predict_cv <- function(Y,
       "[predictomics] engineering_params$gene_level_fc = TRUE is not ",
       "compatible with selection_params$rise_paired = TRUE. Set ",
       "rise_paired = FALSE (or omit it) to use gene_level_fc.",
+      call. = FALSE
+    )
+  }
+
+  # Paired RISE always screens the raw, un-engineered gene-level matrix (see
+  # run_fold()'s is_paired_rise branch, which scores X_full rather than the
+  # already-engineered X_train), so its selected feature names are gene
+  # names. If engineering_params$genesets is set, the (geneset-named)
+  # engineered matrix would then be subset by those gene names, which do not
+  # match any column - this fails with an uninformative "subscript out of
+  # bounds" error deep inside run_fold() rather than here, so it is rejected
+  # explicitly upfront instead. Unlike gene_level_fc/dearseq_mode = "paired",
+  # RISE has no geneset-level counterpart to fall back to.
+  if (is_paired_rise && !is.null(engineering_params) &&
+      !is.null(engineering_params$genesets)) {
+    stop(
+      "[predictomics] selection_params$rise_paired = TRUE is not ",
+      "compatible with engineering_params$genesets (geneset-level ",
+      "engineering). RISE paired screening always operates on the raw, ",
+      "gene-level predictor matrix, so its selected genes cannot be ",
+      "resolved against geneset-aggregated features. Remove ",
+      "engineering_params$genesets, or use a different selection method.",
       call. = FALSE
     )
   }

@@ -268,7 +268,11 @@ with \code{dearseq_mode = "paired"} above, RISE screening (the filtration
 step) uses both pre- and post-treatment rows, but modelling is then
 performed on post-treatment (\code{timepoint == 1}) rows only;
 pre-treatment rows are discarded after screening. This mode is not
-compatible with \code{engineering_params$gene_level_fc = TRUE}.
+compatible with \code{engineering_params$gene_level_fc = TRUE}. Unlike
+\code{selection_params$method = "dearseq"}, RISE has no geneset-level
+counterpart: paired RISE screening always operates on the raw, gene-level
+predictor matrix, so it is also not compatible with
+\code{engineering_params$genesets} (geneset-level engineering).
 
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and
