@@ -124,6 +124,22 @@
 #' supplied. User-supplied names are always preferred where present, unique,
 #' and non-blank.
 #'
+#' **Memory usage**: fitting many pipelines against a large \code{X} (many
+#' features and/or many outer folds) can use substantial memory, since every
+#' successfully-fit pipeline's full \code{predictomics} object is retained in
+#' the returned \code{fits} list for the lifetime of the call. Two things
+#' help: \code{diagnostics = "summary"} (see \code{diagnostics} below) drops
+#' the largest per-fit fields, and \code{gc()} is called after each of the
+#' \code{K + 2} pipeline fits so a finished pipeline's temporaries (its
+#' engineered/restricted data copy, and, in \code{"full"} mode, its
+#' untrimmed diagnostics) are reclaimed before the next, potentially equally
+#' large, pipeline is fit, rather than accumulating across the sequential
+#' loop. If the inner CV loop itself is parallelised (see
+#' \code{\link{predict_cv}}'s Parallelisation section), note that each
+#' worker process holds its own copy of \code{X} for the duration of that
+#' \code{predict_cv} call; a large parallel worker count multiplies memory
+#' use accordingly and is independent of the settings here.
+#'
 #' @param Y Numeric vector of length n. The response variable to be predicted.
 #' @param X Numeric matrix of dimensions n x p. The predictor matrix used for
 #'   the reference pipeline and all \code{K} options. Passed to
@@ -158,6 +174,16 @@
 #'   results by default in \code{\link{print.predictomics_comparison}} and
 #'   \code{\link{plot.predictomics_comparison}}. One of \code{"RMSE"},
 #'   \code{"sRMSE"} (default), \code{"R2"}, or \code{"SpearmanR"}.
+#' @param diagnostics Character string. One of \code{"full"} (default) or
+#'   \code{"summary"}. In \code{"summary"} mode, the full-length
+#'   \code{selection_scores} vector (one score per candidate feature or
+#'   geneset, not just the selected ones) is dropped from
+#'   \code{dearseq_selection}, each element of
+#'   \code{fold_selection_diagnostics}, and \code{outside_cv_selection} in
+#'   every stored fit before it is added to the returned \code{fits} list;
+#'   \code{selected_features} and \code{n_selected} are always kept.
+#'   \code{results} (the summary metrics table) is unaffected either way,
+#'   since it never depends on these fields. See Details ("Memory usage").
 #' @param verbose Logical. If \code{TRUE}, prints progress messages as each
 #'   pipeline is fit. Defaults to \code{TRUE}.
 #'
@@ -170,7 +196,9 @@
 #'       \code{"baseline"}, \code{"reference"}, \code{"option"}),
 #'       \code{RMSE}, \code{sRMSE}, \code{R2}, \code{SpearmanR}.}
 #'     \item{\code{fits}}{A named list of the underlying \code{predictomics}
-#'       objects for each successfully-fit pipeline.}
+#'       objects for each successfully-fit pipeline. See \code{diagnostics}
+#'       above for the \code{"summary"} mode that trims their largest
+#'       fields.}
 #'     \item{\code{option_type}}{The \code{option_type} argument.}
 #'     \item{\code{option_choices}}{The (labelled) \code{option_choices}
 #'       argument.}
@@ -248,6 +276,22 @@
 #'   individual_id = individual_id,
 #'   timepoint     = timepoint
 #' )
+#'
+#' # For a large X and/or many options, reduce memory usage by dropping the
+#' # full-length per-feature selection scores from each stored fit
+#' cmp_lean <- compare_pipelines(
+#'   Y = Y, X = X,
+#'   option_type    = "selection",
+#'   option_choices = list(
+#'     list(method = "pearson",  top_n = 20),
+#'     list(method = "spearman", top_n = 20)
+#'   ),
+#'   reference_params = list(
+#'     selection_params = list(method = "variance", top_n = 20),
+#'     model_params      = list(method = "glmnet")
+#'   ),
+#'   diagnostics = "summary"
+#' )
 #' }
 #'
 #' @export
@@ -271,6 +315,7 @@ compare_pipelines <- function(Y,
                               individual_id       = NULL,
                               timepoint           = NULL,
                               metric              = "sRMSE",
+                              diagnostics         = "full",
                               verbose             = TRUE) {
 
   cl <- match.call()
@@ -289,6 +334,10 @@ compare_pipelines <- function(Y,
 
   if (!is.list(reference_params))
     stop("[predictomics] reference_params must be a named list.",
+         call. = FALSE)
+
+  if (!diagnostics %in% c("full", "summary"))
+    stop("[predictomics] diagnostics must be one of 'full' or 'summary'.",
          call. = FALSE)
 
   if (!metric %in% c("RMSE", "sRMSE", "R2", "SpearmanR"))
@@ -525,8 +574,9 @@ compare_pipelines <- function(Y,
     })
 
     if (!is.null(fit)) {
-      fits[[lbl]] <- fit
       m <- metrics.predictomics(fit, digits = 4)
+      if (diagnostics == "summary") fit <- .trim_predictomics_diagnostics(fit)
+      fits[[lbl]] <- fit
       rows[[lbl]] <- data.frame(
         pipeline  = lbl,
         role      = spec$role,
@@ -537,6 +587,13 @@ compare_pipelines <- function(Y,
         stringsAsFactors = FALSE
       )
     }
+
+    # Each pipeline's temporaries (the restricted/engineered data copy built
+    # above, and - unless diagnostics = "summary" - the untrimmed fit) can be
+    # sizeable for large X; force reclamation before the next (potentially
+    # equally large) pipeline is fit, rather than relying on R's lazy
+    # collector to catch up across several sequential large allocations.
+    gc(full = FALSE)
   }
 
   if (length(rows) == 0L)
@@ -602,6 +659,53 @@ compare_pipelines <- function(Y,
     identical(selection_params$dearseq_mode %||% "classic", "paired")
 
   uses_gene_level_fc || uses_rise_paired || uses_dearseq_paired
+}
+
+
+# -----------------------------------------------------------------------------
+#' Strip full-length selection score vectors from a predictomics fit
+#'
+#' @description
+#' Used by \code{\link{compare_pipelines}} when \code{diagnostics = "summary"}
+#' to reduce the memory footprint of each stored fit. \code{run_selection()}
+#' always returns a score for \strong{every} candidate feature (or geneset),
+#' not just the selected ones; \code{\link{predict_cv}} retains one such
+#' vector per outer fold in \code{fold_selection_diagnostics}, plus one more
+#' in \code{dearseq_selection}/\code{outside_cv_selection} where applicable.
+#' For a large \code{p} and many folds/pipelines, these accumulate quickly.
+#' This strips just the \code{selection_scores} element from each of those
+#' three fields (setting it to \code{NULL}), leaving \code{selected_features}
+#' and \code{n_selected} - the fields \code{\link{compare_pipelines}}'s own
+#' results table and \code{plot()}/\code{print()} methods rely on - intact.
+#' \code{fold_embedded_selection_diagnostics} (lasso/glmnet non-zero
+#' coefficients) is left untouched, since it is already limited to the
+#' selected features rather than every candidate.
+#'
+#' @param fit A \code{predictomics} object returned by
+#'   \code{\link{predict_cv}}.
+#' @return The same object with \code{selection_scores} removed from
+#'   \code{dearseq_selection}, each element of
+#'   \code{fold_selection_diagnostics}, and \code{outside_cv_selection}.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.trim_predictomics_diagnostics <- function(fit) {
+
+  if (!is.null(fit$dearseq_selection))
+    fit$dearseq_selection$selection_scores <- NULL
+
+  if (!is.null(fit$fold_selection_diagnostics))
+    fit$fold_selection_diagnostics <- lapply(
+      fit$fold_selection_diagnostics,
+      function(d) {
+        if (!is.null(d)) d$selection_scores <- NULL
+        d
+      }
+    )
+
+  if (!is.null(fit$outside_cv_selection))
+    fit$outside_cv_selection$selection_scores <- NULL
+
+  fit
 }
 
 

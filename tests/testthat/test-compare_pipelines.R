@@ -620,3 +620,109 @@ test_that("unnamed predictors/response options fall back to option_type-based la
   )
   expect_setequal(names(cmp_y$option_choices), "response")
 })
+
+
+# -----------------------------------------------------------------------------
+# diagnostics = "summary" (memory-lean fits)
+# -----------------------------------------------------------------------------
+
+test_that("diagnostics must be 'full' or 'summary'", {
+  d <- .make_compare_data()
+
+  expect_error(
+    compare_pipelines(
+      Y = d$Y, X = d$X,
+      option_type    = "selection",
+      option_choices = list(list(method = "spearman", top_n = 5)),
+      reference_params = list(
+        selection_params = list(method = "pearson", top_n = 5),
+        model_params      = list(method = "lm")
+      ),
+      diagnostics = "not_a_real_option",
+      folds   = 4,
+      verbose = FALSE
+    ),
+    "diagnostics"
+  )
+})
+
+test_that("diagnostics = 'summary' drops full-length selection scores but keeps selected_features", {
+  d <- .make_compare_data()
+
+  cmp_full <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "selection",
+    option_choices = list(list(method = "spearman", top_n = 5)),
+    reference_params = list(
+      selection_params = list(method = "pearson", top_n = 5),
+      model_params      = list(method = "lm")
+    ),
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  cmp_summary <- compare_pipelines(
+    Y = d$Y, X = d$X,
+    option_type    = "selection",
+    option_choices = list(list(method = "spearman", top_n = 5)),
+    reference_params = list(
+      selection_params = list(method = "pearson", top_n = 5),
+      model_params      = list(method = "lm")
+    ),
+    diagnostics = "summary",
+    folds   = 4,
+    verbose = FALSE
+  )
+
+  ref_full    <- cmp_full$fits[["Reference"]]
+  ref_summary <- cmp_summary$fits[["Reference"]]
+
+  # "full" mode retains a per-fold score for every candidate feature
+  expect_false(is.null(ref_full$fold_selection_diagnostics[[1]]$selection_scores))
+  expect_equal(length(ref_full$fold_selection_diagnostics[[1]]$selection_scores),
+              ncol(d$X))
+
+  # "summary" mode drops the scores but keeps selected_features/n_selected
+  expect_null(ref_summary$fold_selection_diagnostics[[1]]$selection_scores)
+  expect_equal(ref_summary$fold_selection_diagnostics[[1]]$selected_features,
+              ref_full$fold_selection_diagnostics[[1]]$selected_features)
+  expect_equal(ref_summary$fold_selection_diagnostics[[1]]$n_selected,
+              ref_full$fold_selection_diagnostics[[1]]$n_selected)
+
+  # The results table (metrics) is identical regardless of diagnostics mode
+  expect_equal(cmp_summary$results[c("pipeline", "role", "RMSE", "sRMSE", "R2", "SpearmanR")],
+              cmp_full$results[c("pipeline", "role", "RMSE", "sRMSE", "R2", "SpearmanR")])
+})
+
+test_that("diagnostics = 'summary' trims dearseq_selection scores", {
+  testthat::skip_if_not_installed("dearseq")
+  n_ind <- 10
+  p     <- 6
+  set.seed(6)
+  n <- n_ind * 2
+  individual_id <- rep(seq_len(n_ind), each = 2)
+  timepoint     <- rep(c(0, 1), times = n_ind)
+  X <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  colnames(X) <- paste0("gene", seq_len(p))
+  Y <- rnorm(n)
+
+  cmp <- compare_pipelines(
+    Y = Y, X = X,
+    option_type    = "selection",
+    option_choices = list(
+      dearseq = list(method = "dearseq", dearseq_mode = "classic",
+                    threshold = 1.1)
+    ),
+    reference_params = list(
+      selection_params = list(method = "variance", top_n = 3),
+      model_params      = list(method = "lm")
+    ),
+    treatment   = rep(c(0, 1), length.out = n),
+    diagnostics = "summary",
+    folds       = 2,
+    verbose     = FALSE
+  )
+
+  expect_null(cmp$fits[["dearseq"]]$dearseq_selection$selection_scores)
+  expect_false(is.null(cmp$fits[["dearseq"]]$dearseq_selection$selected_features))
+})
