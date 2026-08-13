@@ -130,3 +130,57 @@ test_that("predict_cv's returned treatment matches x$observed for rise_paired, d
 
   expect_equal(length(result$treatment), length(result$observed))
 })
+
+
+# -----------------------------------------------------------------------------
+# rise_paired incompatibility with geneset-level engineering
+# -----------------------------------------------------------------------------
+
+test_that("predict_cv errors informatively for rise_paired = TRUE with geneset engineering", {
+  d <- .make_rise_data()
+  genesets <- list(
+    setA = paste0("gene", 1:3),
+    setB = paste0("gene", 4:6)
+  )
+
+  expect_error(
+    predict_cv(
+      Y = d$Y, X = d$X,
+      engineering_params = list(method = "engineer", genesets = genesets,
+                                agg_method = "mean"),
+      selection_params   = list(method = "rise", rise_paired = TRUE,
+                                rise_epsilon = 0.1, threshold = 1.1),
+      individual_id = d$individual_id,
+      timepoint     = d$timepoint,
+      verbose       = FALSE
+    ),
+    "genesets"
+  )
+})
+
+test_that("unpaired rise is not blocked by the rise_paired/genesets guard", {
+  d <- .make_rise_data()
+  genesets <- list(
+    setA = paste0("gene", 1:3),
+    setB = paste0("gene", 4:6)
+  )
+  treatment_arm <- rep(c(0, 1), length.out = nrow(d$X))
+
+  # rise_paired is FALSE (default) here, so the new guard must not fire;
+  # this should fail (if at all) only for the usual reason unpaired rise
+  # requires treatment, not for a genesets incompatibility.
+  err <- tryCatch({
+    predict_cv(
+      Y = d$Y, X = d$X,
+      engineering_params = list(method = "engineer", genesets = genesets,
+                                agg_method = "mean"),
+      selection_params   = list(method = "rise", rise_epsilon = 0.1,
+                                threshold = 1.1),
+      treatment = treatment_arm,
+      verbose   = FALSE
+    )
+    NULL
+  }, error = function(e) conditionMessage(e))
+
+  if (!is.null(err)) expect_false(grepl("genesets", err))
+})
