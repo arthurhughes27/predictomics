@@ -23,8 +23,10 @@ A named list with the restricted \code{Y}, \code{X},
 }
 \description{
 Subsets to \code{timepoint == 1} rows, used by \code{\link{compare_pipelines}}
-to keep non-\code{gene_level_fc} pipelines comparable (in row count and CV
-fold structure) to a \code{gene_level_fc} pipeline, which collapses paired
-rows to one row per individual.
+to keep pipelines that do not themselves discard pre-treatment rows (see
+\code{\link{.discards_pretreatment_rows}}) comparable, in row count and CV
+fold structure, to pipelines that do (\code{gene_level_fc}, which collapses
+paired rows to one row per individual, or \code{rise_paired}/
+\code{dearseq_mode = "paired"}, which model on post-treatment rows only).
 }
 \keyword{internal}

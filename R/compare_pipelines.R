@@ -67,20 +67,29 @@
 #' \code{"Reference"} row but not necessarily to the \code{K} response
 #' options, which predict a different variable.
 #'
-#' **gene_level_fc row parity**: if \code{option_type = "engineering"} and
-#' at least one of the reference or the \code{K} options has
-#' \code{engineering_params$gene_level_fc = TRUE}, then \code{individual_id}
-#' and \code{timepoint} must be supplied, and every pipeline that does
-#' \strong{not} use \code{gene_level_fc} (including the baseline) has its
-#' data restricted to \code{timepoint == 1} rows before fitting. This
-#' matches the one-row-per-individual structure produced by
-#' \code{gene_level_fc}, so that all pipelines are compared on the same
-#' number of observations and CV folds are of comparable size. This
-#' restriction is not applied when comparing \code{"selection"},
-#' \code{"model"}, \code{"predictors"}, or \code{"response"} options
-#' (\code{gene_level_fc} cannot appear as a choice there) and does not attempt
-#' to reconcile with \code{selection_params$dearseq_mode = "paired"}, which
-#' operates upstream of engineering and is unaffected by this restriction.
+#' **Paired row-discard parity**: some pipeline configurations discard
+#' pre-treatment (\code{timepoint == 0}) rows internally, either by
+#' collapsing paired rows into one fold-change row per individual
+#' (\code{engineering_params$gene_level_fc = TRUE}) or by using both arms for
+#' an upfront filtration step and then modelling on post-treatment rows only
+#' (\code{selection_params$rise_paired = TRUE}, or
+#' \code{selection_params$method = "dearseq"} with
+#' \code{dearseq_mode = "paired"}; see \code{\link{predict_cv}}). This applies
+#' to the reference and every \code{K} option's \strong{effective}
+#' \code{engineering_params}/\code{selection_params} - i.e. whichever of
+#' \code{option_choices} or the corresponding \code{reference_params} element
+#' is in force for that pipeline - regardless of \code{option_type}. If
+#' \strong{any} pipeline (reference, baseline, or an option) uses one of
+#' these, \code{individual_id} and \code{timepoint} must be supplied, and
+#' every pipeline that does \strong{not} itself discard pre-treatment rows
+#' (including the baseline) has its data restricted to \code{timepoint == 1}
+#' rows before fitting; pipelines that do discard rows internally receive the
+#' full, unrestricted data instead, so their own paired filtration step still
+#' sees both arms. This keeps every pipeline being compared on the same final
+#' number of observations, with comparable CV folds, even when
+#' \code{option_choices} mixes paired and non-paired configurations (e.g.
+#' comparing \code{selection_params$method = "dearseq"} with
+#' \code{dearseq_mode = "paired"} against a plain correlation filter).
 #'
 #' **Reference \code{X}/\code{Y}**: for \code{option_type = "predictors"} and
 #' \code{"response"} respectively, \code{reference_params$X} and
@@ -143,8 +152,8 @@
 #'   selection_params = NULL, model_params = list(method = "lm"))}.
 #' @param cv_type,folds,seed,outside_cv,treatment,treatment_predictor,covariates,individual_id,timepoint
 #'   As in \code{\link{predict_cv}}, applied identically to the baseline,
-#'   reference, and all \code{K} options (subject to the gene_level_fc row
-#'   restriction described in Details).
+#'   reference, and all \code{K} options (subject to the paired row-discard
+#'   parity restriction described in Details).
 #' @param metric Character string. The metric used to sort and highlight
 #'   results by default in \code{\link{print.predictomics_comparison}} and
 #'   \code{\link{plot.predictomics_comparison}}. One of \code{"RMSE"},
@@ -216,6 +225,28 @@
 #'   option_type    = "response",
 #'   option_choices = list(alt_response = Y2),
 #'   reference_params = list(model_params = list(method = "glmnet"))
+#' )
+#'
+#' # Compare selection methods where some are paired (discard pre-treatment
+#' # rows internally) and some are not - individual_id/timepoint only need to
+#' # be supplied once; row-parity restriction is handled automatically.
+#' n_ind <- 30
+#' individual_id <- rep(seq_len(n_ind), each = 2)
+#' timepoint     <- rep(c(0, 1), times = n_ind)
+#' cmp_paired <- compare_pipelines(
+#'   Y = Y[seq_len(n_ind * 2)], X = X[seq_len(n_ind * 2), ],
+#'   option_type    = "selection",
+#'   option_choices = list(
+#'     dearseq_paired = list(method = "dearseq", dearseq_mode = "paired",
+#'                          threshold = 0.05),
+#'     correlation     = list(method = "pearson", top_n = 20)
+#'   ),
+#'   reference_params = list(
+#'     selection_params = list(method = "variance", top_n = 20),
+#'     model_params      = list(method = "lm")
+#'   ),
+#'   individual_id = individual_id,
+#'   timepoint     = timepoint
 #' )
 #' }
 #'
@@ -326,22 +357,34 @@ compare_pipelines <- function(Y,
   names(option_choices) <- option_labels
 
   # ---------------------------------------------------------------------------
-  # 3. gene_level_fc row-parity setup
+  # 3. Paired row-discard parity setup. For each spec (reference and every
+  # option), determine its *effective* engineering_params/selection_params -
+  # whichever of option_choices[[i]] or the reference value is in force for
+  # that spec, given option_type - and check whether that combination
+  # discards pre-treatment rows internally (gene_level_fc, rise_paired, or
+  # dearseq_mode = "paired"; see .discards_pretreatment_rows()). This check is
+  # option_type-agnostic: e.g. for option_type = "selection", each option's
+  # own selection_params is checked individually, so a mix of paired and
+  # non-paired selection methods across option_choices is detected correctly.
   # ---------------------------------------------------------------------------
-  option_uses_gene_level_fc <- if (option_type == "engineering") {
-    vapply(option_choices, .uses_gene_level_fc, logical(1))
-  } else {
-    rep(FALSE, length(option_choices))
-  }
-  ref_uses_gene_level_fc <- option_type == "engineering" &&
-    .uses_gene_level_fc(ref_engineering)
+  option_discards_rows <- vapply(seq_along(option_choices), function(i) {
+    eng <- if (option_type == "engineering") option_choices[[i]] else ref_engineering
+    sel <- if (option_type == "selection")   option_choices[[i]] else ref_selection
+    .discards_pretreatment_rows(eng, sel)
+  }, logical(1))
 
-  needs_row_parity <- any(option_uses_gene_level_fc) || ref_uses_gene_level_fc
+  ref_discards_rows <- .discards_pretreatment_rows(ref_engineering, ref_selection)
+
+  needs_row_parity <- any(option_discards_rows) || ref_discards_rows
 
   if (needs_row_parity)
     .validate_individual_timepoint_pairing(
       individual_id, timepoint, length(Y),
-      context = "compare_pipelines() with a gene_level_fc option"
+      context = paste0(
+        "compare_pipelines() with a paired option (engineering_params$",
+        "gene_level_fc, selection_params$rise_paired, or ",
+        "selection_params$dearseq_mode = 'paired')"
+      )
     )
 
   # ---------------------------------------------------------------------------
@@ -357,7 +400,7 @@ compare_pipelines <- function(Y,
     X_override         = NULL,
     Y_override         = ref_Y,
     use_X              = FALSE,
-    uses_gene_level_fc = FALSE
+    discards_rows      = FALSE
   )
 
   specs[["Reference"]] <- list(
@@ -368,7 +411,7 @@ compare_pipelines <- function(Y,
     X_override         = ref_X,
     Y_override         = ref_Y,
     use_X              = TRUE,
-    uses_gene_level_fc = ref_uses_gene_level_fc
+    discards_rows      = ref_discards_rows
   )
 
   for (i in seq_along(option_choices)) {
@@ -383,7 +426,7 @@ compare_pipelines <- function(Y,
         X_override         = NULL,
         Y_override         = NULL,
         use_X              = TRUE,
-        uses_gene_level_fc = FALSE
+        discards_rows      = option_discards_rows[i]
       ),
       engineering = list(
         role               = "option",
@@ -393,7 +436,7 @@ compare_pipelines <- function(Y,
         X_override         = NULL,
         Y_override         = NULL,
         use_X              = TRUE,
-        uses_gene_level_fc = option_uses_gene_level_fc[i]
+        discards_rows      = option_discards_rows[i]
       ),
       model = list(
         role               = "option",
@@ -403,7 +446,7 @@ compare_pipelines <- function(Y,
         X_override         = NULL,
         Y_override         = NULL,
         use_X              = TRUE,
-        uses_gene_level_fc = FALSE
+        discards_rows      = option_discards_rows[i]
       ),
       predictors = list(
         role               = "option",
@@ -413,7 +456,7 @@ compare_pipelines <- function(Y,
         X_override         = option_choices[[i]],
         Y_override         = NULL,
         use_X              = TRUE,
-        uses_gene_level_fc = FALSE
+        discards_rows      = option_discards_rows[i]
       ),
       response = list(
         role               = "option",
@@ -423,7 +466,7 @@ compare_pipelines <- function(Y,
         X_override         = NULL,
         Y_override         = option_choices[[i]],
         use_X              = TRUE,
-        uses_gene_level_fc = FALSE
+        discards_rows      = option_discards_rows[i]
       )
     )
   }
@@ -443,7 +486,7 @@ compare_pipelines <- function(Y,
 
     fit <- tryCatch({
 
-      restrict <- needs_row_parity && !spec$uses_gene_level_fc
+      restrict <- needs_row_parity && !spec$discards_rows
 
       this_X <- spec$X_override %||% X
       this_Y <- spec$Y_override %||% Y
@@ -526,14 +569,39 @@ compare_pipelines <- function(Y,
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-#' Detect whether an engineering_params list uses gene_level_fc
+#' Detect whether a pipeline configuration discards pre-treatment rows
+#'
+#' @description
+#' Returns \code{TRUE} if the given \code{engineering_params}/
+#' \code{selection_params} combination discards pre-treatment
+#' (\code{timepoint == 0}) rows internally before or during modelling - either
+#' by collapsing paired rows into one fold-change row per individual
+#' (\code{engineering_params$gene_level_fc = TRUE}), or by using both arms for
+#' an upfront paired filtration step and then modelling on post-treatment
+#' rows only (\code{selection_params$rise_paired = TRUE}, or
+#' \code{selection_params$method = "dearseq"} with
+#' \code{selection_params$dearseq_mode = "paired"}; see
+#' \code{\link{predict_cv}}). Used by \code{\link{compare_pipelines}} to
+#' detect when cross-pipeline row-parity restriction is needed.
 #'
 #' @param engineering_params An \code{engineering_params} list, or \code{NULL}.
+#' @param selection_params A \code{selection_params} list, or \code{NULL}.
 #' @return Logical scalar.
 #' @keywords internal
 # -----------------------------------------------------------------------------
-.uses_gene_level_fc <- function(engineering_params) {
-  isTRUE(engineering_params$gene_level_fc)
+.discards_pretreatment_rows <- function(engineering_params, selection_params) {
+
+  uses_gene_level_fc <- isTRUE(engineering_params$gene_level_fc)
+
+  uses_rise_paired <- !is.null(selection_params) &&
+    isTRUE(selection_params$method == "rise") &&
+    isTRUE(selection_params$rise_paired)
+
+  uses_dearseq_paired <- !is.null(selection_params) &&
+    isTRUE(selection_params$method == "dearseq") &&
+    identical(selection_params$dearseq_mode %||% "classic", "paired")
+
+  uses_gene_level_fc || uses_rise_paired || uses_dearseq_paired
 }
 
 
@@ -568,9 +636,11 @@ compare_pipelines <- function(Y,
 #'
 #' @description
 #' Subsets to \code{timepoint == 1} rows, used by \code{\link{compare_pipelines}}
-#' to keep non-\code{gene_level_fc} pipelines comparable (in row count and CV
-#' fold structure) to a \code{gene_level_fc} pipeline, which collapses paired
-#' rows to one row per individual.
+#' to keep pipelines that do not themselves discard pre-treatment rows (see
+#' \code{\link{.discards_pretreatment_rows}}) comparable, in row count and CV
+#' fold structure, to pipelines that do (\code{gene_level_fc}, which collapses
+#' paired rows to one row per individual, or \code{rise_paired}/
+#' \code{dearseq_mode = "paired"}, which model on post-treatment rows only).
 #'
 #' @param Y Numeric response vector.
 #' @param X Numeric predictor matrix, or \code{NULL}.

@@ -57,8 +57,8 @@ supplied. Defaults to \code{list(engineering_params = NULL,
 selection_params = NULL, model_params = list(method = "lm"))}.}
 
 \item{cv_type, folds, seed, outside_cv, treatment, treatment_predictor, covariates, individual_id, timepoint}{As in \code{\link{predict_cv}}, applied identically to the baseline,
-reference, and all \code{K} options (subject to the gene_level_fc row
-restriction described in Details).}
+reference, and all \code{K} options (subject to the paired row-discard
+parity restriction described in Details).}
 
 \item{metric}{Character string. The metric used to sort and highlight
 results by default in \code{\link{print.predictomics_comparison}} and
@@ -145,20 +145,29 @@ single reference \code{Y} only (\code{reference_params$Y}, or the
 \code{"Reference"} row but not necessarily to the \code{K} response
 options, which predict a different variable.
 
-\strong{gene_level_fc row parity}: if \code{option_type = "engineering"} and
-at least one of the reference or the \code{K} options has
-\code{engineering_params$gene_level_fc = TRUE}, then \code{individual_id}
-and \code{timepoint} must be supplied, and every pipeline that does
-\strong{not} use \code{gene_level_fc} (including the baseline) has its
-data restricted to \code{timepoint == 1} rows before fitting. This
-matches the one-row-per-individual structure produced by
-\code{gene_level_fc}, so that all pipelines are compared on the same
-number of observations and CV folds are of comparable size. This
-restriction is not applied when comparing \code{"selection"},
-\code{"model"}, \code{"predictors"}, or \code{"response"} options
-(\code{gene_level_fc} cannot appear as a choice there) and does not attempt
-to reconcile with \code{selection_params$dearseq_mode = "paired"}, which
-operates upstream of engineering and is unaffected by this restriction.
+\strong{Paired row-discard parity}: some pipeline configurations discard
+pre-treatment (\code{timepoint == 0}) rows internally, either by
+collapsing paired rows into one fold-change row per individual
+(\code{engineering_params$gene_level_fc = TRUE}) or by using both arms for
+an upfront filtration step and then modelling on post-treatment rows only
+(\code{selection_params$rise_paired = TRUE}, or
+\code{selection_params$method = "dearseq"} with
+\code{dearseq_mode = "paired"}; see \code{\link{predict_cv}}). This applies
+to the reference and every \code{K} option's \strong{effective}
+\code{engineering_params}/\code{selection_params} - i.e. whichever of
+\code{option_choices} or the corresponding \code{reference_params} element
+is in force for that pipeline - regardless of \code{option_type}. If
+\strong{any} pipeline (reference, baseline, or an option) uses one of
+these, \code{individual_id} and \code{timepoint} must be supplied, and
+every pipeline that does \strong{not} itself discard pre-treatment rows
+(including the baseline) has its data restricted to \code{timepoint == 1}
+rows before fitting; pipelines that do discard rows internally receive the
+full, unrestricted data instead, so their own paired filtration step still
+sees both arms. This keeps every pipeline being compared on the same final
+number of observations, with comparable CV folds, even when
+\code{option_choices} mixes paired and non-paired configurations (e.g.
+comparing \code{selection_params$method = "dearseq"} with
+\code{dearseq_mode = "paired"} against a plain correlation filter).
 
 \strong{Reference \code{X}/\code{Y}}: for \code{option_type = "predictors"} and
 \code{"response"} respectively, \code{reference_params$X} and
@@ -235,6 +244,28 @@ cmp_y <- compare_pipelines(
   option_type    = "response",
   option_choices = list(alt_response = Y2),
   reference_params = list(model_params = list(method = "glmnet"))
+)
+
+# Compare selection methods where some are paired (discard pre-treatment
+# rows internally) and some are not - individual_id/timepoint only need to
+# be supplied once; row-parity restriction is handled automatically.
+n_ind <- 30
+individual_id <- rep(seq_len(n_ind), each = 2)
+timepoint     <- rep(c(0, 1), times = n_ind)
+cmp_paired <- compare_pipelines(
+  Y = Y[seq_len(n_ind * 2)], X = X[seq_len(n_ind * 2), ],
+  option_type    = "selection",
+  option_choices = list(
+    dearseq_paired = list(method = "dearseq", dearseq_mode = "paired",
+                         threshold = 0.05),
+    correlation     = list(method = "pearson", top_n = 20)
+  ),
+  reference_params = list(
+    selection_params = list(method = "variance", top_n = 20),
+    model_params      = list(method = "lm")
+  ),
+  individual_id = individual_id,
+  timepoint     = timepoint
 )
 }
 
