@@ -274,6 +274,24 @@ counterpart: paired RISE screening always operates on the raw, gene-level
 predictor matrix, so it is also not compatible with
 \code{engineering_params$genesets} (geneset-level engineering).
 
+If \code{selection_params$method = "variance"} is combined with
+\code{engineering_params$col_transform = "z"}, a warning is issued and
+variance scores are computed on a separately re-engineered, pre-z-score
+version of the training data instead (identical geneset aggregation, if
+\code{engineering_params$genesets} is set, just without the z-score step).
+This is necessary because z-scoring fixes every feature's own variance to
+exactly ~1 on the training fold, before any aggregation - so filtering by
+variance on the fully engineered matrix would select on essentially
+floating-point noise (with no aggregation), or on a matrix confounded by
+geneset size and internal gene-gene correlation rather than genuine
+cross-sample variability (with aggregation). Only the variance
+\emph{selection scores} are computed differently; the training/test
+matrices actually used for model fitting still come from the normal,
+fully engineered (z-scored) pipeline, subset to whichever features
+variance selection chose. No other selection method is affected by this,
+since \code{"pearson"}/\code{"spearman"} correlation with \code{Y} is
+invariant to each feature's own linear rescaling.
+
 If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 treatment is appended to the predictor matrix after engineering and
 selection, immediately before model fitting. Treatment is never passed
