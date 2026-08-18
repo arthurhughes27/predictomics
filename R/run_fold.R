@@ -30,6 +30,17 @@
 #'   applied.
 #' @param engineering_params,selection_params,model_params Pipeline parameter
 #'   lists.
+#' @param engineering_params_for_selection An \code{engineering_params} list
+#'   with \code{col_transform} forced to \code{"none"} (same aggregation, if
+#'   any, as \code{engineering_params}), or \code{NULL}. Non-\code{NULL} only
+#'   when \code{selection_params$method = "variance"} is combined with
+#'   \code{engineering_params$col_transform = "z"} (see
+#'   \code{\link{predict_cv}}): in that case, variance selection scores are
+#'   computed on a separately re-engineered training matrix built from this
+#'   list (pre-z-score, so variance is not artificially fixed to ~1), while
+#'   \code{X_train}/\code{X_test} used for modelling still come from
+#'   \code{engineering_params} (the fully engineered, z-scored matrix) as
+#'   usual - only the selection step's input differs.
 #' @param treatment Original treatment vector or \code{NULL}.
 #' @param treatment_mat Numeric matrix of treatment columns or \code{NULL}.
 #' @param covariate_mat Numeric matrix of covariate columns or \code{NULL}.
@@ -60,13 +71,17 @@
                       treatment_full     = NULL,
                       covariate_mat_full = NULL,
                       individual_id_full = NULL,
-                      timepoint_full     = NULL) {
+                      timepoint_full     = NULL,
+                      engineering_params_for_selection = NULL) {
 
   n         <- length(Y)
   train_idx <- which(fold_ids != k)
   test_idx  <- which(fold_ids == k)
 
-  X_train <- X_processed[train_idx, , drop = FALSE]
+  X_train     <- X_processed[train_idx, , drop = FALSE]
+  X_train_raw <- X_train  # pre-engineering training partition, for variance
+                          # selection's pre-z-score scoring matrix (see
+                          # engineering_params_for_selection above)
   Y_train <- Y[train_idx]
   X_test  <- X_processed[test_idx,  , drop = FALSE]
 
@@ -112,8 +127,19 @@
         params        = selection_params
       )
     } else {
+      # variance + col_transform = "z": score on a separately re-engineered,
+      # pre-z-score version of this fold's training partition (same
+      # aggregation, if any); X_train itself (used for modelling below) stays
+      # the normal, fully engineered (z-scored) matrix built above.
+      X_train_for_selection <- if (!is.null(engineering_params_for_selection)) {
+        run_engineering(X_train = X_train_raw,
+                        params  = engineering_params_for_selection)$X_transformed
+      } else {
+        X_train
+      }
+
       sel_fit <- run_selection(
-        X_train    = X_train,
+        X_train    = X_train_for_selection,
         Y_train    = Y_train,
         covariates = if (!is.null(covariate_mat))
           covariate_mat[train_idx, , drop = FALSE]

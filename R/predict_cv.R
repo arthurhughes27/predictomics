@@ -96,6 +96,24 @@
 #' predictor matrix, so it is also not compatible with
 #' \code{engineering_params$genesets} (geneset-level engineering).
 #'
+#' If \code{selection_params$method = "variance"} is combined with
+#' \code{engineering_params$col_transform = "z"}, a warning is issued and
+#' variance scores are computed on a separately re-engineered, pre-z-score
+#' version of the training data instead (identical geneset aggregation, if
+#' \code{engineering_params$genesets} is set, just without the z-score step).
+#' This is necessary because z-scoring fixes every feature's own variance to
+#' exactly ~1 on the training fold, before any aggregation - so filtering by
+#' variance on the fully engineered matrix would select on essentially
+#' floating-point noise (with no aggregation), or on a matrix confounded by
+#' geneset size and internal gene-gene correlation rather than genuine
+#' cross-sample variability (with aggregation). Only the variance
+#' \emph{selection scores} are computed differently; the training/test
+#' matrices actually used for model fitting still come from the normal,
+#' fully engineered (z-scored) pipeline, subset to whichever features
+#' variance selection chose. No other selection method is affected by this,
+#' since \code{"pearson"}/\code{"spearman"} correlation with \code{Y} is
+#' invariant to each feature's own linear rescaling.
+#'
 #' If \code{treatment} is supplied and \code{treatment_predictor = TRUE},
 #' treatment is appended to the predictor matrix after engineering and
 #' selection, immediately before model fitting. Treatment is never passed
@@ -711,6 +729,39 @@ predict_cv <- function(Y,
   }
 
   # ---------------------------------------------------------------------------
+  # 1d. selection_params$method = "variance" combined with
+  # engineering_params$col_transform = "z" would select on a near-constant
+  # (no aggregation) or size/coherence-confounded (with aggregation)
+  # post-standardisation variance, since z-scoring fixes each feature's own
+  # variance to ~1 before any aggregation. Warn once here (not inside the
+  # per-fold loop, which is wrapped in suppressWarnings()) and compute
+  # variance scores on the pre-z-score data instead - identical aggregation,
+  # if any, just without col_transform - while model fitting continues to
+  # use the fully engineered (z-scored) matrix as usual.
+  # ---------------------------------------------------------------------------
+  is_variance_on_zscore <- !is.null(selection_params) &&
+    isTRUE(selection_params$method == "variance") &&
+    !is.null(engineering_params) &&
+    identical(engineering_params$col_transform %||% "none", "z")
+
+  engineering_params_for_selection <- NULL
+
+  if (is_variance_on_zscore) {
+    warning(
+      "[predictomics] selection_params$method = 'variance' combined with ",
+      "engineering_params$col_transform = 'z' would select features by a ",
+      "near-constant or confounded post-standardisation variance (z-scoring ",
+      "fixes each feature's own variance to ~1, before any aggregation). ",
+      "Variance scores will instead be computed on the pre-z-score data ",
+      "(with any geneset aggregation still applied); model fitting continues ",
+      "to use the fully engineered (z-scored) matrix as usual.",
+      call. = FALSE
+    )
+    engineering_params_for_selection <- engineering_params_pipeline
+    engineering_params_for_selection$col_transform <- "none"
+  }
+
+  # ---------------------------------------------------------------------------
   # 2. Outside-CV warning
   # ---------------------------------------------------------------------------
   if (outside_cv) {
@@ -818,8 +869,22 @@ predict_cv <- function(Y,
 
     if (!is.null(selection_params_pipeline)) {
       if (verbose) message("[predictomics] Applying feature selection outside CV loop.")
+
+      # variance + col_transform = "z": score on the pre-z-score data (X is
+      # still raw at this point - only dearseq/gene_level_fc, never
+      # col_transform, touch it upstream), same aggregation as the real
+      # engineered matrix. X_processed itself is untouched, so modelling
+      # still uses the fully engineered (z-scored) matrix below.
+      X_for_selection <- if (!is.null(engineering_params_for_selection)) {
+        run_engineering(X_train = X, params = engineering_params_for_selection)$X_transformed
+      } else if (is_paired_rise) {
+        X_full
+      } else {
+        X_processed
+      }
+
       sel_fit <- run_selection(
-        X_train       = if (is_paired_rise) X_full else X_processed,
+        X_train       = X_for_selection,
         Y_train       = if (is_paired_rise) Y_full else Y,
         covariates    = if (is_paired_rise) covariate_mat_full
         else covariate_mat,
@@ -858,6 +923,7 @@ predict_cv <- function(Y,
           Y                  = Y,
           outside_cv         = outside_cv,
           engineering_params = engineering_params_pipeline,
+          engineering_params_for_selection = engineering_params_for_selection,
           selection_params   = selection_params_pipeline,
           model_params       = model_params,
           treatment          = treatment_pipeline,

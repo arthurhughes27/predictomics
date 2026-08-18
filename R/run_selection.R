@@ -43,7 +43,11 @@
 #' Five filter methods are supported:
 #' \itemize{
 #'   \item \code{"variance"}: features are ranked by their variance across
-#'     training samples. Does not use \code{Y_train}.
+#'     training samples. Does not use \code{Y_train}. When called from
+#'     \code{\link{predict_cv}} with \code{engineering_params$col_transform =
+#'     "z"}, \code{X_train} here is automatically a separately re-engineered,
+#'     pre-z-score matrix rather than the fully engineered one - see
+#'     \code{\link{predict_cv}}'s Details for why.
 #'   \item \code{"pearson"}: features are ranked by the absolute value of
 #'     their Pearson correlation with \code{Y_train}.
 #'   \item \code{"spearman"}: features are ranked by the absolute value of
