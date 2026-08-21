@@ -105,7 +105,10 @@ plot_feature_importance <- function(x, top_n = 20L, ...) {
   # 3. Compute mean absolute importance across folds
   # ---------------------------------------------------------------------------
   n_folds      <- length(diag_list)
-  all_features <- unique(unlist(lapply(diag_list, function(d) names(d$scores))))
+  all_features <- unique(unlist(lapply(
+    diag_list,
+    function(d) { nm <- names(d$scores); nm[!is.na(nm)] }
+  )))
 
   if (length(all_features) == 0L)
     stop("[predictomics] No feature importance scores were recorded in any ",
@@ -121,8 +124,14 @@ plot_feature_importance <- function(x, top_n = 20L, ...) {
 
   for (k in seq_len(n_folds)) {
     scores_k <- diag_list[[k]]$scores
-    if (!is.null(scores_k) && length(scores_k) > 0L)
-      imp_matrix[names(scores_k), k] <- scores_k
+    if (!is.null(scores_k) && length(scores_k) > 0L) {
+      # Guard against any stray NA or unrecognised names rather than letting
+      # them reach a matrix subscript (NA/unmatched names are never valid
+      # row indices and would otherwise error out here).
+      valid <- !is.na(names(scores_k)) & names(scores_k) %in% all_features
+      if (any(valid))
+        imp_matrix[names(scores_k)[valid], k] <- scores_k[valid]
+    }
   }
 
   mean_abs_imp <- rowMeans(abs(imp_matrix), na.rm = TRUE)

@@ -620,14 +620,14 @@ predict_model <- function(fit, X_new) {
 .compute_feature_importance <- function(caret_fit, method, col_names,
                                         original_names) {
 
-  name_map <- stats::setNames(original_names, col_names)
-  type     <- NA_character_
-  scores   <- NULL
+  type   <- NA_character_
+  scores <- NULL
 
   if (method == "lm") {
     coef_vec <- stats::coef(caret_fit$finalModel)
     coef_vec <- coef_vec[names(coef_vec) != "(Intercept)"]
-    scores   <- stats::setNames(as.numeric(coef_vec), name_map[names(coef_vec)])
+    mapped   <- .map_importance_names(names(coef_vec), col_names, original_names)
+    scores   <- stats::setNames(as.numeric(coef_vec), mapped)
     type     <- "coefficient"
 
   } else if (method == "glmnet") {
@@ -637,20 +637,23 @@ predict_model <- function(fit, X_new) {
     coef_names  <- rownames(coef_mat)
     coef_vec    <- stats::setNames(coef_vec, coef_names)
     coef_vec    <- coef_vec[names(coef_vec) != "(Intercept)"]
-    scores      <- stats::setNames(coef_vec, name_map[names(coef_vec)])
+    mapped      <- .map_importance_names(names(coef_vec), col_names, original_names)
+    scores      <- stats::setNames(as.numeric(coef_vec), mapped)
     type        <- "coefficient"
 
   } else if (method == "ranger") {
-    imp <- caret_fit$finalModel$variable.importance
-    scores <- stats::setNames(as.numeric(imp), name_map[names(imp)])
+    imp    <- caret_fit$finalModel$variable.importance
+    mapped <- .map_importance_names(names(imp), col_names, original_names)
+    scores <- stats::setNames(as.numeric(imp), mapped)
     type   <- "impurity"
 
   } else if (method == "svmLinear") {
     ksvm_fit <- caret_fit$finalModel
     w        <- as.numeric(matrix(ksvm_fit@coef[[1]], nrow = 1) %*%
                            ksvm_fit@xmatrix[[1]])
-    names(w) <- colnames(ksvm_fit@xmatrix[[1]])
-    scores   <- stats::setNames(w, name_map[names(w)])
+    w_names  <- colnames(ksvm_fit@xmatrix[[1]])
+    mapped   <- .map_importance_names(w_names, col_names, original_names)
+    scores   <- stats::setNames(w, mapped)
     type     <- "coefficient"
   }
 
@@ -660,4 +663,42 @@ predict_model <- function(fit, X_new) {
   }
 
   list(scores = scores, type = type)
+}
+
+
+# -----------------------------------------------------------------------------
+#' Map sanitised feature names back to original names, positionally
+#'
+#' @description
+#' Translates the names returned by a fitted model (\code{coef()},
+#' \code{variable.importance}, or a \code{kernlab} weight vector) back to the
+#' original, pre-sanitisation feature names. Matched by \strong{position}
+#' within \code{col_names} rather than assuming every model-reported name is
+#' guaranteed to string-match an entry of \code{col_names} exactly (a
+#' name-based lookup silently yields \code{NA} on any mismatch, which is
+#' unsafe to use downstream as a matrix/vector name). Any name that still
+#' cannot be resolved this way falls back to the model-reported name itself
+#' rather than \code{NA}, so the result is always fully named.
+#'
+#' @param current_names Character vector of names as reported by the fitted
+#'   model.
+#' @param col_names Character vector. Sanitised column names from training,
+#'   in the training matrix's column order.
+#' @param original_names Character vector. Original (pre-sanitisation)
+#'   feature names, in the same order as \code{col_names}.
+#'
+#' @return Character vector, same length as \code{current_names}, with no
+#'   \code{NA} values.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.map_importance_names <- function(current_names, col_names, original_names) {
+
+  idx    <- match(current_names, col_names)
+  mapped <- original_names[idx]
+
+  unresolved <- is.na(mapped)
+  if (any(unresolved))
+    mapped[unresolved] <- current_names[unresolved]
+
+  mapped
 }
