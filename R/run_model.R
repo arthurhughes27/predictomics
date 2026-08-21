@@ -605,6 +605,13 @@ predict_model <- function(fit, X_new) {
 #' \code{kernlab::ksvm} fit (signed) - the standard way to obtain feature
 #' weights from a linear SVM.
 #'
+#' Feature names are assigned to each of these vectors purely by
+#' \strong{position} (via \code{\link{.map_importance_names}}), not by
+#' matching whatever name (if any) the underlying model/package attaches to
+#' its own output - see \code{\link{.map_importance_names}} for why this
+#' matters in practice (\code{kernlab} in particular does not reliably name
+#' the columns of the matrix a \code{"svr"} weight vector is derived from).
+#'
 #' @param caret_fit A fitted caret train object.
 #' @param method Character. The resolved method (\code{"lm"}, \code{"glmnet"},
 #'   \code{"ranger"}, or \code{"svmLinear"}).
@@ -626,7 +633,7 @@ predict_model <- function(fit, X_new) {
   if (method == "lm") {
     coef_vec <- stats::coef(caret_fit$finalModel)
     coef_vec <- coef_vec[names(coef_vec) != "(Intercept)"]
-    mapped   <- .map_importance_names(names(coef_vec), col_names, original_names)
+    mapped   <- .map_importance_names(length(coef_vec), col_names, original_names)
     scores   <- stats::setNames(as.numeric(coef_vec), mapped)
     type     <- "coefficient"
 
@@ -637,13 +644,13 @@ predict_model <- function(fit, X_new) {
     coef_names  <- rownames(coef_mat)
     coef_vec    <- stats::setNames(coef_vec, coef_names)
     coef_vec    <- coef_vec[names(coef_vec) != "(Intercept)"]
-    mapped      <- .map_importance_names(names(coef_vec), col_names, original_names)
+    mapped      <- .map_importance_names(length(coef_vec), col_names, original_names)
     scores      <- stats::setNames(as.numeric(coef_vec), mapped)
     type        <- "coefficient"
 
   } else if (method == "ranger") {
     imp    <- caret_fit$finalModel$variable.importance
-    mapped <- .map_importance_names(names(imp), col_names, original_names)
+    mapped <- .map_importance_names(length(imp), col_names, original_names)
     scores <- stats::setNames(as.numeric(imp), mapped)
     type   <- "impurity"
 
@@ -651,8 +658,7 @@ predict_model <- function(fit, X_new) {
     ksvm_fit <- caret_fit$finalModel
     w        <- as.numeric(matrix(ksvm_fit@coef[[1]], nrow = 1) %*%
                            ksvm_fit@xmatrix[[1]])
-    w_names  <- colnames(ksvm_fit@xmatrix[[1]])
-    mapped   <- .map_importance_names(w_names, col_names, original_names)
+    mapped   <- .map_importance_names(length(w), col_names, original_names)
     scores   <- stats::setNames(w, mapped)
     type     <- "coefficient"
   }
@@ -667,38 +673,55 @@ predict_model <- function(fit, X_new) {
 
 
 # -----------------------------------------------------------------------------
-#' Map sanitised feature names back to original names, positionally
+#' Map a per-feature importance vector back to original feature names,
+#' positionally
 #'
 #' @description
-#' Translates the names returned by a fitted model (\code{coef()},
-#' \code{variable.importance}, or a \code{kernlab} weight vector) back to the
-#' original, pre-sanitisation feature names. Matched by \strong{position}
-#' within \code{col_names} rather than assuming every model-reported name is
-#' guaranteed to string-match an entry of \code{col_names} exactly (a
-#' name-based lookup silently yields \code{NA} on any mismatch, which is
-#' unsafe to use downstream as a matrix/vector name). Any name that still
-#' cannot be resolved this way falls back to the model-reported name itself
-#' rather than \code{NA}, so the result is always fully named.
+#' Returns \code{original_names} directly, after checking that
+#' \code{current_length} - the length of the coefficient/importance vector
+#' actually reported by the fitted model - equals \code{length(col_names)}.
 #'
-#' @param current_names Character vector of names as reported by the fitted
-#'   model.
+#' @details
+#' None of the four supported model families ever drop or reorder features
+#' when reporting per-feature coefficients/importance for \emph{every}
+#' feature (unlike \code{.extract_glmnet_features()}, which subsets to a
+#' sparse selection): \code{lm}'s and \code{glmnet}'s coefficient vectors
+#' preserve the fitting data's column order, \code{ranger}'s
+#' \code{variable.importance} covers every splitting variable, and a linear
+#' \code{kernlab::ksvm} fit's derived weight vector has one entry per
+#' training column. It is therefore both simpler and safer to trust this
+#' positional guarantee than to rely on whatever name each model/package
+#' happens to attach to its own output - in particular, \code{kernlab}'s
+#' \code{@@xmatrix} slot does not reliably carry column names, which
+#' previously caused \code{\link{plot_feature_importance}} to receive
+#' \code{NA}-named \code{"svr"} scores.
+#'
+#' If the length check ever fails, that indicates a genuine mismatch between
+#' the fitted model's own feature bookkeeping and \code{run_model()}'s -
+#' rather than silently producing corrupted (partially \code{NA}) importance
+#' scores, this raises an informative error so the mismatch is caught at the
+#' point of fitting.
+#'
+#' @param current_length Integer. Length of the coefficient/importance
+#'   vector reported by the fitted model.
 #' @param col_names Character vector. Sanitised column names from training,
 #'   in the training matrix's column order.
 #' @param original_names Character vector. Original (pre-sanitisation)
 #'   feature names, in the same order as \code{col_names}.
 #'
-#' @return Character vector, same length as \code{current_names}, with no
-#'   \code{NA} values.
+#' @return \code{original_names}, unchanged.
 #' @keywords internal
 # -----------------------------------------------------------------------------
-.map_importance_names <- function(current_names, col_names, original_names) {
+.map_importance_names <- function(current_length, col_names, original_names) {
 
-  idx    <- match(current_names, col_names)
-  mapped <- original_names[idx]
+  if (current_length != length(col_names))
+    stop(
+      "[predictomics] Internal error: the fitted model reported ",
+      current_length, " feature importance score(s) but training used ",
+      length(col_names), " predictor(s). This indicates a mismatch between ",
+      "the model's own feature bookkeeping and run_model()'s - please ",
+      "report this as a bug.", call. = FALSE
+    )
 
-  unresolved <- is.na(mapped)
-  if (any(unresolved))
-    mapped[unresolved] <- current_names[unresolved]
-
-  mapped
+  original_names
 }
