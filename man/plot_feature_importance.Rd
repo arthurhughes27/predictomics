@@ -4,14 +4,20 @@
 \alias{plot_feature_importance}
 \title{Plot model-derived feature importance across cross-validation folds}
 \usage{
-plot_feature_importance(x, top_n = 20L, ...)
+plot_feature_importance(x, top_n = 20L, standardize = TRUE, ...)
 }
 \arguments{
 \item{x}{A \code{predictomics} object returned by \code{\link{predict_cv}},
 fitted with \code{model_params$compute_importance = TRUE}.}
 
-\item{top_n}{Positive integer. Number of top features (by mean absolute
-importance) to display. Defaults to \code{20}.}
+\item{top_n}{Positive integer. Number of top features (by mean
+[standardised] absolute importance) to display. Defaults to \code{20}.}
+
+\item{standardize}{Logical. If \code{TRUE} (default), importance is
+standardised within each fold so the top feature in that fold is 100\%
+and all others are a percentage of it, before averaging across folds.
+If \code{FALSE}, the raw mean absolute importance is plotted instead.
+See Details.}
 
 \item{...}{Additional arguments passed to \code{ggplot2::theme}.}
 }
@@ -28,11 +34,23 @@ contribution to the fitted model, so it is meaningful even when no
 explicit or embedded feature selection was used.
 }
 \details{
-For each feature that reached the model in at least one fold, the mean
-absolute importance across the folds in which it was present is computed
-and features are ranked in decreasing order. The top \code{top_n} features
-are shown as a horizontal bar chart, in the same visual style as
-\code{\link{plot_selection_stability}}.
+For each feature that reached the model in at least one fold, an
+across-fold average importance is computed and features are ranked in
+decreasing order. The top \code{top_n} features are shown as a horizontal
+bar chart, in the same visual style as \code{\link{plot_selection_stability}}.
+
+By default (\code{standardize = TRUE}), importance is first standardised
+\strong{within each fold}: the most important feature in that fold is set
+to 100\%, and every other feature's absolute importance in that fold is
+expressed as a percentage of it. The plotted value is then each feature's
+mean standardised importance across the folds in which it was present.
+This makes features comparable across folds even when the raw magnitude
+of importance drifts from fold to fold (e.g. due to refitting on
+different training partitions), since every fold contributes on the same
+0-100\% scale regardless of its own raw scale. Set \code{standardize =
+FALSE} to instead plot the raw mean absolute importance (the previous
+default), e.g. to compare absolute coefficient/impurity magnitudes
+directly.
 
 Importance scores are method-specific (see \code{\link{run_model}}):
 raw coefficients (signed) for \code{"lm"}, \code{"glmnet"}, \code{"lasso"},
@@ -41,7 +59,9 @@ raw coefficients (signed) for \code{"lm"}, \code{"glmnet"}, \code{"lasso"},
 comparable across features on a common scale, a warning is issued (in
 addition to the one already issued by \code{\link{predict_cv}} at fit
 time) when \code{x$model_params$scale} is not \code{TRUE} and the fitted
-method is coefficient-based.
+method is coefficient-based - this applies regardless of \code{standardize},
+since within-fold standardisation does not fix miscalibration
+\emph{between} features within the same fold.
 }
 \examples{
 \dontrun{
@@ -51,6 +71,9 @@ result <- predict_cv(
                       compute_importance = TRUE)
 )
 plot_feature_importance(result)
+
+# Raw mean |coefficient|/impurity instead of within-fold percentages
+plot_feature_importance(result, standardize = FALSE)
 }
 
 }
