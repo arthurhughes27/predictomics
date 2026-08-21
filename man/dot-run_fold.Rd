@@ -42,18 +42,6 @@ applied.}
 \item{engineering_params, selection_params, model_params}{Pipeline parameter
 lists.}
 
-\item{engineering_params_for_selection}{An \code{engineering_params} list
-with \code{col_transform} forced to \code{"none"} (same aggregation, if
-any, as \code{engineering_params}), or \code{NULL}. Non-\code{NULL} only
-when \code{selection_params$method = "variance"} is combined with
-\code{engineering_params$col_transform = "z"} (see
-\code{\link{predict_cv}}): in that case, variance selection scores are
-computed on a separately re-engineered training matrix built from this
-list (pre-z-score, so variance is not artificially fixed to ~1), while
-\code{X_train}/\code{X_test} used for modelling still come from
-\code{engineering_params} (the fully engineered, z-scored matrix) as
-usual - only the selection step's input differs.}
-
 \item{treatment}{Original treatment vector or \code{NULL}.}
 
 \item{treatment_mat}{Numeric matrix of treatment columns or \code{NULL}.}
@@ -65,6 +53,18 @@ usual - only the selection step's input differs.}
 sorted by individual so that pre- and post-treatment rows for the same
 individual are matched by position. \code{NULL} unless
 \code{is_paired_rise = TRUE}.}
+
+\item{engineering_params_for_selection}{An \code{engineering_params} list
+with \code{col_transform} forced to \code{"none"} (same aggregation, if
+any, as \code{engineering_params}), or \code{NULL}. Non-\code{NULL} only
+when \code{selection_params$method = "variance"} is combined with
+\code{engineering_params$col_transform = "z"} (see
+\code{\link{predict_cv}}): in that case, variance selection scores are
+computed on a separately re-engineered training matrix built from this
+list (pre-z-score, so variance is not artificially fixed to ~1), while
+\code{X_train}/\code{X_test} used for modelling still come from
+\code{engineering_params} (the fully engineered, z-scored matrix) as
+usual - only the selection step's input differs.}
 }
 \value{
 A named list with:
