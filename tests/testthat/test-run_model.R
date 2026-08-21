@@ -130,3 +130,91 @@ test_that("predict_cv errors informatively when X has NA and impute = 'none' (de
     "impute"
   )
 })
+
+# -----------------------------------------------------------------------------
+# model_params$scale
+# -----------------------------------------------------------------------------
+
+test_that(".validate_model_params rejects a non-logical/NA scale", {
+  expect_error(
+    .validate_model_params(list(method = "lm", scale = "yes")),
+    "model_params\\$scale"
+  )
+  expect_error(
+    .validate_model_params(list(method = "lm", scale = c(TRUE, FALSE))),
+    "model_params\\$scale"
+  )
+  expect_error(
+    .validate_model_params(list(method = "lm", scale = NA)),
+    "model_params\\$scale"
+  )
+})
+
+test_that(".validate_model_params accepts scale = TRUE/FALSE and defaults it", {
+  expect_silent(.validate_model_params(list(method = "lm", scale = TRUE)))
+  expect_silent(.validate_model_params(list(method = "lm", scale = FALSE)))
+  expect_silent(.validate_model_params(list(method = "lm")))
+})
+
+test_that("run_model records scale = FALSE by default", {
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y, params = list(method = "lm"))
+  expect_identical(fit$scale, FALSE)
+})
+
+test_that("run_model + predict_model give near-identical lm predictions with scale = TRUE/FALSE", {
+  d <- .make_model_data()
+
+  fit_unscaled <- run_model(X_train = d$X, Y_train = d$Y,
+                            params = list(method = "lm", scale = FALSE))
+  fit_scaled <- run_model(X_train = d$X, Y_train = d$Y,
+                          params = list(method = "lm", scale = TRUE))
+
+  expect_identical(fit_scaled$scale, TRUE)
+
+  X_test <- d$X[1:5, , drop = FALSE]
+  preds_unscaled <- predict_model(fit_unscaled, X_new = X_test)
+  preds_scaled <- predict_model(fit_scaled, X_new = X_test)
+
+  # OLS predictions are invariant to affine per-feature rescaling of the
+  # predictors, so the two should agree up to numerical tolerance.
+  expect_equal(preds_scaled, preds_unscaled, tolerance = 1e-6)
+})
+
+test_that("run_model + predict_model support scale = TRUE for glmnet", {
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "glmnet", inner_folds = 3,
+                                 scale = TRUE))
+  expect_identical(fit$scale, TRUE)
+
+  preds <- predict_model(fit, X_new = d$X[1:5, , drop = FALSE])
+  expect_equal(length(preds), 5L)
+  expect_false(anyNA(preds))
+})
+
+test_that("run_model + predict_model support scale = TRUE for ranger", {
+  testthat::skip_if_not_installed("ranger")
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "ranger", inner_folds = 3,
+                                 scale = TRUE))
+  expect_identical(fit$scale, TRUE)
+
+  preds <- predict_model(fit, X_new = d$X[1:5, , drop = FALSE])
+  expect_equal(length(preds), 5L)
+  expect_false(anyNA(preds))
+})
+
+test_that("run_model + predict_model support scale = TRUE for svr", {
+  testthat::skip_if_not_installed("kernlab")
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "svr", inner_folds = 3,
+                                 scale = TRUE))
+  expect_identical(fit$scale, TRUE)
+
+  preds <- predict_model(fit, X_new = d$X[1:5, , drop = FALSE])
+  expect_equal(length(preds), 5L)
+  expect_false(anyNA(preds))
+})
