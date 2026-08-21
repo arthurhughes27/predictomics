@@ -58,6 +58,33 @@ test_that("plot_feature_importance warns when scale != TRUE for a coefficient-ba
   expect_warning(plot_feature_importance(result), "scale")
 })
 
+test_that("feature_importance never produces NA-named scores for a single-predictor model (regression test)", {
+  # X = NULL + treatment_predictor = TRUE leaves a single "treatment" column
+  # as the only predictor reaching run_model() - previously this could yield
+  # an NA-named score, which crashed plot_feature_importance() with
+  # "subscript out of bounds" when indexing the feature x fold matrix.
+  set.seed(1)
+  n <- 30
+  treatment <- rep(c(0, 1), each = n / 2)
+  Y <- treatment * 5 + rnorm(n, sd = 0.1)
+
+  result <- predict_cv(
+    Y = Y, X = NULL, treatment = treatment, treatment_predictor = TRUE,
+    model_params = list(method = "lm", scale = TRUE, compute_importance = TRUE),
+    folds = 5, verbose = FALSE
+  )
+
+  for (fold_imp in result$fold_feature_importance) {
+    expect_false(is.null(fold_imp))
+    expect_false(anyNA(names(fold_imp$scores)))
+    expect_identical(names(fold_imp$scores), "treatment")
+  }
+
+  p <- plot_feature_importance(result)
+  expect_s3_class(p, "ggplot")
+  expect_identical(as.character(p$data$feature), "treatment")
+})
+
 test_that("plot_feature_importance does not warn for ranger (impurity-based)", {
   testthat::skip_if_not_installed("ranger")
   d <- .make_importance_data()
