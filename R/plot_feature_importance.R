@@ -50,7 +50,8 @@
 #' @param x A \code{predictomics} object returned by \code{\link{predict_cv}},
 #'   fitted with \code{model_params$compute_importance = TRUE}.
 #' @param top_n Positive integer. Number of top features (by mean
-#'   [standardised] absolute importance) to display. Defaults to \code{20}.
+#'   standardised, or raw, absolute importance - see \code{standardize})
+#'   to display. Defaults to \code{20}.
 #' @param standardize Logical. If \code{TRUE} (default), importance is
 #'   standardised within each fold so the top feature in that fold is 100\%
 #'   and all others are a percentage of it, before averaging across folds.
