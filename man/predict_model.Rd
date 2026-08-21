@@ -22,7 +22,11 @@ A numeric vector of predicted values of length \code{nrow(X_new)}.
 }
 \description{
 Applies a model fitted by \code{\link{run_model}} to a new predictor matrix
-\code{X_new}, returning a numeric vector of predicted values.
+\code{X_new}, returning a numeric vector of predicted values. If \code{fit}
+was produced with \code{model_params$scale = TRUE}, the training-derived
+centering/scaling transform stored in \code{fit$caret_fit} is applied to
+\code{X_new} automatically by \code{caret}'s own \code{predict.train}
+method; no separate handling is required here.
 }
 \seealso{
 \code{\link{run_model}}

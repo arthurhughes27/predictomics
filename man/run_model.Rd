@@ -38,6 +38,17 @@ stored in the returned fit object and reapplied to \code{X_new} in
 \code{\link{predict_model}}, avoiding data leakage from the test
 fold. If \code{X_train} contains \code{NA} and
 \code{impute = "none"}, an informative error is raised.}
+\item{\code{scale}}{Logical. Defaults to \code{FALSE}. If \code{TRUE},
+every predictor (including protected predictors such as
+\code{treatment}/\code{covariates}, which are appended \emph{before}
+\code{run_model} is called) is centred and scaled via
+\code{caret::train}'s own \code{preProcess = c("center", "scale")}
+mechanism, immediately before fitting. This is computed fold-safely:
+separately within each inner-CV resample during hyperparameter
+tuning, then refit on the full training data for the final model;
+\code{\link{predict_model}} needs no special handling, since
+\code{predict.train} applies the stored, training-derived transform
+to \code{X_new} automatically. See Details.}
 }}
 }
 \value{
@@ -65,6 +76,10 @@ used (\code{"none"}, \code{"mean"}, or \code{"median"}).}
 values used to impute \code{X_train}, or \code{NULL} if
 \code{impute = "none"}. Reapplied to \code{X_new} by
 \code{\link{predict_model}}.}
+\item{\code{scale}}{Logical. The \code{scale} argument used. When
+\code{TRUE}, \code{caret_fit} stores its own \code{preProcess}
+transform internally and applies it automatically at prediction
+time; no separate field is needed for this.}
 }
 }
 \description{
@@ -104,6 +119,25 @@ oversubscription when the outer CV loop is parallelised.
 \strong{svr}: fits a support vector regression with a linear kernel via
 \code{kernlab} (caret method \code{"svmLinear"}). Tunes \code{C} (cost)
 via inner CV.
+
+\strong{model_params$scale}: by default (\code{FALSE}), predictors reach
+\code{caret::train} exactly as engineering/selection produced them (plus
+any protected predictors), with no further transformation. Setting
+\code{scale = TRUE} centres and scales the final matrix via caret's own
+\code{preProcess} mechanism immediately before fitting, applied uniformly
+regardless of \code{method}. This is most relevant for \code{"svr"}: the
+underlying \code{kernlab::ksvm} engine centres/scales predictors
+internally by default independently of anything this package does, so
+feeding it an already comparably-scaled matrix keeps that internal
+transform close to a no-op and keeps coefficient magnitudes (if extracted
+from the fit) meaningful. It is also useful for comparing \code{"lm"}
+coefficient magnitudes across features, and for placing protected
+predictors (e.g. \code{age} alongside standardised gene/geneset features)
+on a common scale. It has no effect on \code{"ranger"} predictions (tree
+splits are invariant to per-feature monotonic rescaling), and is largely
+redundant for \code{"glmnet"}/\code{"lasso"}/\code{"ridge"}, which already
+standardise internally and report coefficients back on whatever scale they
+were given.
 }
 \examples{
 \dontrun{

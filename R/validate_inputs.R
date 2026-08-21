@@ -400,6 +400,12 @@
     stop("[predictomics] model_params$impute must be one of 'none', 'mean', ",
          "or 'median'.", call. = FALSE)
 
+  # scale
+  scale <- params$scale %||% FALSE
+  if (!is.logical(scale) || length(scale) != 1L || is.na(scale))
+    stop("[predictomics] model_params$scale must be TRUE or FALSE.",
+         call. = FALSE)
+
   invisible(NULL)
 }
 

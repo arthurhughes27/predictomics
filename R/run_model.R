@@ -59,6 +59,25 @@
 #' \code{kernlab} (caret method \code{"svmLinear"}). Tunes \code{C} (cost)
 #' via inner CV.
 #'
+#' **model_params$scale**: by default (\code{FALSE}), predictors reach
+#' \code{caret::train} exactly as engineering/selection produced them (plus
+#' any protected predictors), with no further transformation. Setting
+#' \code{scale = TRUE} centres and scales the final matrix via caret's own
+#' \code{preProcess} mechanism immediately before fitting, applied uniformly
+#' regardless of \code{method}. This is most relevant for \code{"svr"}: the
+#' underlying \code{kernlab::ksvm} engine centres/scales predictors
+#' internally by default independently of anything this package does, so
+#' feeding it an already comparably-scaled matrix keeps that internal
+#' transform close to a no-op and keeps coefficient magnitudes (if extracted
+#' from the fit) meaningful. It is also useful for comparing \code{"lm"}
+#' coefficient magnitudes across features, and for placing protected
+#' predictors (e.g. \code{age} alongside standardised gene/geneset features)
+#' on a common scale. It has no effect on \code{"ranger"} predictions (tree
+#' splits are invariant to per-feature monotonic rescaling), and is largely
+#' redundant for \code{"glmnet"}/\code{"lasso"}/\code{"ridge"}, which already
+#' standardise internally and report coefficients back on whatever scale they
+#' were given.
+#'
 #' @param X_train Numeric matrix of dimensions n (samples) x p (features).
 #'   Training predictor matrix. Must have column names.
 #' @param Y_train Numeric vector of length n. Training response variable.
@@ -88,6 +107,17 @@
 #'       \code{\link{predict_model}}, avoiding data leakage from the test
 #'       fold. If \code{X_train} contains \code{NA} and
 #'       \code{impute = "none"}, an informative error is raised.}
+#'     \item{\code{scale}}{Logical. Defaults to \code{FALSE}. If \code{TRUE},
+#'       every predictor (including protected predictors such as
+#'       \code{treatment}/\code{covariates}, which are appended \emph{before}
+#'       \code{run_model} is called) is centred and scaled via
+#'       \code{caret::train}'s own \code{preProcess = c("center", "scale")}
+#'       mechanism, immediately before fitting. This is computed fold-safely:
+#'       separately within each inner-CV resample during hyperparameter
+#'       tuning, then refit on the full training data for the final model;
+#'       \code{\link{predict_model}} needs no special handling, since
+#'       \code{predict.train} applies the stored, training-derived transform
+#'       to \code{X_new} automatically. See Details.}
 #'   }
 #'
 #' @return A named list of class \code{"predictomics_model"} containing:
@@ -114,6 +144,10 @@
 #'       values used to impute \code{X_train}, or \code{NULL} if
 #'       \code{impute = "none"}. Reapplied to \code{X_new} by
 #'       \code{\link{predict_model}}.}
+#'     \item{\code{scale}}{Logical. The \code{scale} argument used. When
+#'       \code{TRUE}, \code{caret_fit} stores its own \code{preProcess}
+#'       transform internally and applies it automatically at prediction
+#'       time; no separate field is needed for this.}
 #'   }
 #'
 #' @seealso \code{\link{predict_model}}, \code{\link{predict_cv}}
@@ -173,6 +207,7 @@ run_model <- function(X_train, Y_train, params) {
   tune_length <- params$tune_length %||% 3L
   fold_id     <- params$fold_id     %||% 0L
   impute      <- params$impute      %||% "none"
+  scale       <- params$scale       %||% FALSE
 
   # ---------------------------------------------------------------------------
   # 2b. Impute missing values in X_train (fill values computed on this fold
@@ -243,6 +278,16 @@ run_model <- function(X_train, Y_train, params) {
     allowParallel   = FALSE
   )
 
+  # model_params$scale = TRUE centers/scales every predictor (including
+  # protected predictors appended by predict_cv() before run_model() is
+  # called) via caret's own preProcess mechanism: computed fold-safely within
+  # inner-CV resamples during tuning, refit on the full training data for the
+  # final model, and reapplied to newdata automatically by predict_model()
+  # (predict.train() applies a stored preProcess transform before dispatching
+  # to the underlying model's own predict method - no separate handling is
+  # needed here).
+  pre_process <- if (scale) c("center", "scale") else NULL
+
   # ---------------------------------------------------------------------------
   # 5. Fit via caret
   # ---------------------------------------------------------------------------
@@ -251,9 +296,10 @@ run_model <- function(X_train, Y_train, params) {
                       lm = {
                         caret::train(
                           .Y ~ .,
-                          data      = train_data,
-                          method    = "lm",
-                          trControl = tr_control
+                          data        = train_data,
+                          method      = "lm",
+                          trControl   = tr_control,
+                          preProcess  = pre_process
                         )
                       },
 
@@ -265,7 +311,8 @@ run_model <- function(X_train, Y_train, params) {
                           trControl  = tr_control,
                           tuneGrid   = tune_grid,
                           tuneLength = if (is.null(tune_grid)) tune_length else NULL,
-                          metric     = "RMSE"
+                          metric     = "RMSE",
+                          preProcess = pre_process
                         )
                       },
 
@@ -278,7 +325,8 @@ run_model <- function(X_train, Y_train, params) {
                           tuneGrid    = tune_grid,
                           tuneLength  = if (is.null(tune_grid)) tune_length else NULL,
                           metric      = "RMSE",
-                          num.threads = 1L
+                          num.threads = 1L,
+                          preProcess  = pre_process
                         )
                       },
 
@@ -290,7 +338,8 @@ run_model <- function(X_train, Y_train, params) {
                           trControl  = tr_control,
                           tuneGrid   = tune_grid,
                           tuneLength = if (is.null(tune_grid)) tune_length else NULL,
-                          metric     = "RMSE"
+                          metric     = "RMSE",
+                          preProcess = pre_process
                         )
                       }
   )
@@ -320,7 +369,8 @@ run_model <- function(X_train, Y_train, params) {
       selected_features = selected_features$features,
       selection_scores  = selected_features$scores,
       impute_method     = impute,
-      impute_values     = impute_values
+      impute_values     = impute_values,
+      scale             = scale
     ),
     class = "predictomics_model"
   )
@@ -332,7 +382,11 @@ run_model <- function(X_train, Y_train, params) {
 #'
 #' @description
 #' Applies a model fitted by \code{\link{run_model}} to a new predictor matrix
-#' \code{X_new}, returning a numeric vector of predicted values.
+#' \code{X_new}, returning a numeric vector of predicted values. If \code{fit}
+#' was produced with \code{model_params$scale = TRUE}, the training-derived
+#' centering/scaling transform stored in \code{fit$caret_fit} is applied to
+#' \code{X_new} automatically by \code{caret}'s own \code{predict.train}
+#' method; no separate handling is required here.
 #'
 #' @param fit A \code{predictomics_model} object returned by
 #'   \code{\link{run_model}}.
