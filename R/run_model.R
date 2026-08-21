@@ -600,17 +600,15 @@ predict_model <- function(fit, X_new) {
 #' to have been passed at training time, which \code{\link{run_model}} does
 #' whenever \code{compute_importance = TRUE}).
 #'
-#' \strong{svmLinear} (\code{"svr"}): the primal weight vector
-#' \eqn{w = t(coef) \%*\% xmatrix} recovered from the linear-kernel
-#' \code{kernlab::ksvm} fit (signed) - the standard way to obtain feature
-#' weights from a linear SVM.
+#' \strong{svmLinear} (\code{"svr"}): the primal weight vector (signed),
+#' recovered via \code{\link{.svm_linear_weights}} rather than by reaching
+#' into the fitted \code{kernlab::ksvm} object's internal representation -
+#' see that function's documentation for why.
 #'
 #' Feature names are assigned to each of these vectors purely by
 #' \strong{position} (via \code{\link{.map_importance_names}}), not by
 #' matching whatever name (if any) the underlying model/package attaches to
-#' its own output - see \code{\link{.map_importance_names}} for why this
-#' matters in practice (\code{kernlab} in particular does not reliably name
-#' the columns of the matrix a \code{"svr"} weight vector is derived from).
+#' its own output.
 #'
 #' @param caret_fit A fitted caret train object.
 #' @param method Character. The resolved method (\code{"lm"}, \code{"glmnet"},
@@ -655,12 +653,10 @@ predict_model <- function(fit, X_new) {
     type   <- "impurity"
 
   } else if (method == "svmLinear") {
-    ksvm_fit <- caret_fit$finalModel
-    w        <- as.numeric(matrix(ksvm_fit@coef[[1]], nrow = 1) %*%
-                           ksvm_fit@xmatrix[[1]])
-    mapped   <- .map_importance_names(length(w), col_names, original_names)
-    scores   <- stats::setNames(w, mapped)
-    type     <- "coefficient"
+    w      <- .svm_linear_weights(caret_fit, col_names)
+    mapped <- .map_importance_names(length(w), col_names, original_names)
+    scores <- stats::setNames(w, mapped)
+    type   <- "coefficient"
   }
 
   if (!is.null(scores)) {
@@ -669,6 +665,63 @@ predict_model <- function(fit, X_new) {
   }
 
   list(scores = scores, type = type)
+}
+
+
+# -----------------------------------------------------------------------------
+#' Recover a linear SVM's per-feature weight vector via predict(), not model
+#' internals
+#'
+#' @description
+#' Returns the primal weight vector \code{w} of a linear-kernel
+#' \code{"svmLinear"} (\code{"svr"}) fit, one entry per training column, in
+#' \code{col_names} order.
+#'
+#' @details
+#' A fit's decision function \code{f(x) = predict(caret_fit, x)} is an
+#' \strong{exact} affine function of the raw predictor vector \code{x} for a
+#' linear-kernel SVM: composing any \code{preProcess} transform stored on
+#' \code{caret_fit} (itself affine) with \code{kernlab::ksvm}'s own linear
+#' decision function (\eqn{w'x + b}, plus any internal scaling \code{ksvm}
+#' applies, also affine) yields another affine function. Because of this,
+#' \eqn{w_j = f(e_j) - f(0)} exactly, for the \eqn{j}-th standard basis
+#' vector \eqn{e_j} - no numerical approximation involved, unlike a generic
+#' finite-difference gradient.
+#'
+#' This is used instead of extracting \code{coef}/\code{xmatrix} from the
+#' fitted \code{kernlab::ksvm} object directly (an earlier implementation):
+#' those are undocumented S4 slots whose exact representation (in particular
+#' whether \code{xmatrix}'s columns carry the training feature names) is not
+#' something this package can rely on - two rounds of prior bug reports
+#' traced back to exactly that. Going through \code{predict()} instead relies
+#' only on \code{caret}/\code{kernlab}'s public, documented prediction
+#' interface, and as a side effect reports the weight in the units the
+#' predictor actually maps from (raw predictor values), which is arguably
+#' more directly interpretable than a coefficient in whatever internally
+#' rescaled space \code{ksvm} happens to work in.
+#'
+#' This costs \code{length(col_names) + 1} extra \code{predict()} calls
+#' (batched into a single call), which is why \code{compute_importance} is
+#' opt-in in \code{\link{run_model}}.
+#'
+#' @param caret_fit A fitted caret train object (\code{method = "svmLinear"}).
+#' @param col_names Character vector. Sanitised column names from training,
+#'   in the training matrix's column order.
+#'
+#' @return Numeric vector, one weight per entry of \code{col_names}, in the
+#'   same order.
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.svm_linear_weights <- function(caret_fit, col_names) {
+
+  p     <- length(col_names)
+  probe <- matrix(0, nrow = p + 1L, ncol = p, dimnames = list(NULL, col_names))
+  probe[cbind(seq_len(p) + 1L, seq_len(p))] <- 1
+
+  preds <- as.numeric(stats::predict(caret_fit, newdata = as.data.frame(probe)))
+
+  # preds[1] = f(0); preds[1 + j] = f(e_j) = w_j + f(0)
+  preds[-1] - preds[1]
 }
 
 
