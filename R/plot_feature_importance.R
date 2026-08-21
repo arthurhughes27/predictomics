@@ -18,11 +18,23 @@
 #' explicit or embedded feature selection was used.
 #'
 #' @details
-#' For each feature that reached the model in at least one fold, the mean
-#' absolute importance across the folds in which it was present is computed
-#' and features are ranked in decreasing order. The top \code{top_n} features
-#' are shown as a horizontal bar chart, in the same visual style as
-#' \code{\link{plot_selection_stability}}.
+#' For each feature that reached the model in at least one fold, an
+#' across-fold average importance is computed and features are ranked in
+#' decreasing order. The top \code{top_n} features are shown as a horizontal
+#' bar chart, in the same visual style as \code{\link{plot_selection_stability}}.
+#'
+#' By default (\code{standardize = TRUE}), importance is first standardised
+#' \strong{within each fold}: the most important feature in that fold is set
+#' to 100\%, and every other feature's absolute importance in that fold is
+#' expressed as a percentage of it. The plotted value is then each feature's
+#' mean standardised importance across the folds in which it was present.
+#' This makes features comparable across folds even when the raw magnitude
+#' of importance drifts from fold to fold (e.g. due to refitting on
+#' different training partitions), since every fold contributes on the same
+#' 0-100\% scale regardless of its own raw scale. Set \code{standardize =
+#' FALSE} to instead plot the raw mean absolute importance (the previous
+#' default), e.g. to compare absolute coefficient/impurity magnitudes
+#' directly.
 #'
 #' Importance scores are method-specific (see \code{\link{run_model}}):
 #' raw coefficients (signed) for \code{"lm"}, \code{"glmnet"}, \code{"lasso"},
@@ -31,12 +43,19 @@
 #' comparable across features on a common scale, a warning is issued (in
 #' addition to the one already issued by \code{\link{predict_cv}} at fit
 #' time) when \code{x$model_params$scale} is not \code{TRUE} and the fitted
-#' method is coefficient-based.
+#' method is coefficient-based - this applies regardless of \code{standardize},
+#' since within-fold standardisation does not fix miscalibration
+#' \emph{between} features within the same fold.
 #'
 #' @param x A \code{predictomics} object returned by \code{\link{predict_cv}},
 #'   fitted with \code{model_params$compute_importance = TRUE}.
-#' @param top_n Positive integer. Number of top features (by mean absolute
-#'   importance) to display. Defaults to \code{20}.
+#' @param top_n Positive integer. Number of top features (by mean
+#'   [standardised] absolute importance) to display. Defaults to \code{20}.
+#' @param standardize Logical. If \code{TRUE} (default), importance is
+#'   standardised within each fold so the top feature in that fold is 100\%
+#'   and all others are a percentage of it, before averaging across folds.
+#'   If \code{FALSE}, the raw mean absolute importance is plotted instead.
+#'   See Details.
 #' @param ... Additional arguments passed to \code{ggplot2::theme}.
 #'
 #' @return A \code{ggplot} object.
@@ -52,11 +71,14 @@
 #'                       compute_importance = TRUE)
 #' )
 #' plot_feature_importance(result)
+#'
+#' # Raw mean |coefficient|/impurity instead of within-fold percentages
+#' plot_feature_importance(result, standardize = FALSE)
 #' }
 #'
 #' @export
 # -----------------------------------------------------------------------------
-plot_feature_importance <- function(x, top_n = 20L, ...) {
+plot_feature_importance <- function(x, top_n = 20L, standardize = TRUE, ...) {
 
   # ---------------------------------------------------------------------------
   # 1. Validate
@@ -67,6 +89,9 @@ plot_feature_importance <- function(x, top_n = 20L, ...) {
 
   if (!is.numeric(top_n) || length(top_n) != 1L || top_n < 1L)
     stop("[predictomics] top_n must be a positive integer.", call. = FALSE)
+
+  if (!is.logical(standardize) || length(standardize) != 1L || is.na(standardize))
+    stop("[predictomics] standardize must be TRUE or FALSE.", call. = FALSE)
 
   diag_list <- x$fold_feature_importance
 
@@ -134,8 +159,27 @@ plot_feature_importance <- function(x, top_n = 20L, ...) {
     }
   }
 
-  mean_abs_imp <- rowMeans(abs(imp_matrix), na.rm = TRUE)
-  imp_sorted   <- sort(mean_abs_imp, decreasing = TRUE)
+  abs_matrix <- abs(imp_matrix)
+
+  if (standardize) {
+    # Per-fold standardisation: the most important feature in a given fold
+    # is set to 100% (1.0), and every other feature's importance in that
+    # fold is expressed as a proportion of it. Folds with no recorded scores
+    # (all NA) or where every score is exactly 0 contribute NA (excluded
+    # below via na.rm = TRUE) rather than NaN/Inf from a 0/0 or x/0 division.
+    fold_max <- vapply(seq_len(ncol(abs_matrix)), function(k) {
+      col <- abs_matrix[, k]
+      if (all(is.na(col))) NA_real_ else max(col, na.rm = TRUE)
+    }, numeric(1))
+    fold_max[fold_max == 0] <- NA_real_
+
+    summary_matrix <- sweep(abs_matrix, 2, fold_max, FUN = "/")
+  } else {
+    summary_matrix <- abs_matrix
+  }
+
+  mean_imp     <- rowMeans(summary_matrix, na.rm = TRUE)
+  imp_sorted   <- sort(mean_imp, decreasing = TRUE)
   top_features <- names(imp_sorted)[seq_len(min(top_n, length(imp_sorted)))]
 
   imp_df <- data.frame(
@@ -146,20 +190,22 @@ plot_feature_importance <- function(x, top_n = 20L, ...) {
   # ---------------------------------------------------------------------------
   # 4. Bar chart
   # ---------------------------------------------------------------------------
-  type_label <- if (identical(importance_type, "impurity")) {
-    "Impurity-based importance"
+  x_label <- if (standardize) {
+    "Mean standardised VI"
+  } else if (identical(importance_type, "impurity")) {
+    "Mean impurity-based importance"
   } else {
     "Mean |coefficient|"
   }
 
-  ggplot2::ggplot(
+  p <- ggplot2::ggplot(
     imp_df,
     ggplot2::aes(x = importance, y = feature)
   ) +
     ggplot2::geom_col(fill = "steelblue", alpha = 0.8, width = 0.7) +
 
     ggplot2::labs(
-      x        = type_label,
+      x        = x_label,
       y        = NULL,
       title    = "Feature importance",
       subtitle = paste0(x$model_params$method, "  |  Top ", nrow(imp_df),
@@ -176,4 +222,9 @@ plot_feature_importance <- function(x, top_n = 20L, ...) {
       panel.grid.major.y = ggplot2::element_blank(),
       ...
     )
+
+  if (standardize)
+    p <- p + ggplot2::scale_x_continuous(labels = scales::percent_format(accuracy = 1))
+
+  p
 }
