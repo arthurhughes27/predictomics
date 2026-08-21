@@ -46,10 +46,5 @@ whenever \code{compute_importance = TRUE}).
 \eqn{w = t(coef) \%*\% xmatrix} recovered from the linear-kernel
 \code{kernlab::ksvm} fit (signed) - the standard way to obtain feature
 weights from a linear SVM.
-
-Feature names are mapped back to their original (pre-sanitisation) form via
-\code{\link{.map_importance_names}}, matched by \strong{position} rather
-than assuming the model always reports names that string-match
-\code{col_names} exactly.
 }
 \keyword{internal}
