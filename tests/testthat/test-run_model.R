@@ -218,3 +218,121 @@ test_that("run_model + predict_model support scale = TRUE for svr", {
   expect_equal(length(preds), 5L)
   expect_false(anyNA(preds))
 })
+
+# -----------------------------------------------------------------------------
+# model_params$compute_importance
+# -----------------------------------------------------------------------------
+
+test_that(".validate_model_params rejects a non-logical/NA compute_importance", {
+  expect_error(
+    .validate_model_params(list(method = "lm", compute_importance = "yes")),
+    "model_params\\$compute_importance"
+  )
+  expect_error(
+    .validate_model_params(list(method = "lm",
+                                compute_importance = c(TRUE, FALSE))),
+    "model_params\\$compute_importance"
+  )
+  expect_error(
+    .validate_model_params(list(method = "lm", compute_importance = NA)),
+    "model_params\\$compute_importance"
+  )
+})
+
+test_that("run_model does not compute feature_importance by default", {
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y, params = list(method = "lm"))
+  expect_null(fit$feature_importance)
+  expect_true(is.na(fit$importance_type))
+})
+
+test_that("run_model computes feature_importance for lm covering all features", {
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "lm", scale = TRUE,
+                                 compute_importance = TRUE))
+
+  expect_identical(fit$importance_type, "coefficient")
+  expect_setequal(names(fit$feature_importance), colnames(d$X))
+  # sorted by decreasing absolute value
+  expect_equal(fit$feature_importance,
+              fit$feature_importance[order(abs(fit$feature_importance),
+                                           decreasing = TRUE)])
+})
+
+test_that("run_model computes feature_importance for glmnet (dense, including ridge)", {
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "ridge", inner_folds = 3,
+                                 scale = TRUE, compute_importance = TRUE))
+
+  expect_identical(fit$importance_type, "coefficient")
+  expect_setequal(names(fit$feature_importance), colnames(d$X))
+})
+
+test_that("run_model computes non-negative feature_importance for ranger", {
+  testthat::skip_if_not_installed("ranger")
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "ranger", inner_folds = 3,
+                                 compute_importance = TRUE))
+
+  expect_identical(fit$importance_type, "impurity")
+  expect_setequal(names(fit$feature_importance), colnames(d$X))
+  expect_true(all(fit$feature_importance >= 0))
+})
+
+test_that("run_model computes feature_importance for svr via the linear weight vector", {
+  testthat::skip_if_not_installed("kernlab")
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "svr", inner_folds = 3,
+                                 scale = TRUE, compute_importance = TRUE))
+
+  expect_identical(fit$importance_type, "coefficient")
+  expect_setequal(names(fit$feature_importance), colnames(d$X))
+})
+
+test_that("predict_cv warns when compute_importance = TRUE, coefficient-based method, scale != TRUE", {
+  d <- .make_model_data()
+  expect_warning(
+    predict_cv(Y = d$Y, X = d$X,
+              model_params = list(method = "lm", compute_importance = TRUE),
+              folds = 3, verbose = FALSE),
+    "model_params\\$scale"
+  )
+})
+
+test_that("predict_cv does not warn about scale when compute_importance + scale = TRUE", {
+  d <- .make_model_data()
+  warnings_seen <- character(0)
+  withCallingHandlers(
+    predict_cv(Y = d$Y, X = d$X,
+              model_params = list(method = "lm", scale = TRUE,
+                                  compute_importance = TRUE),
+              folds = 3, verbose = FALSE),
+    warning = function(w) {
+      warnings_seen <<- c(warnings_seen, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_false(any(grepl("model_params\\$scale", warnings_seen)))
+})
+
+test_that("predict_cv populates fold_feature_importance only when requested", {
+  d <- .make_model_data()
+
+  result_off <- predict_cv(Y = d$Y, X = d$X,
+                           model_params = list(method = "lm"),
+                           folds = 3, verbose = FALSE)
+  expect_null(result_off$fold_feature_importance)
+
+  result_on <- suppressWarnings(predict_cv(
+    Y = d$Y, X = d$X,
+    model_params = list(method = "lm", compute_importance = TRUE),
+    folds = 3, verbose = FALSE
+  ))
+  expect_equal(length(result_on$fold_feature_importance), 3L)
+  expect_setequal(names(result_on$fold_feature_importance[[1]]$scores),
+                  colnames(d$X))
+})

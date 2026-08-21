@@ -78,6 +78,26 @@
 #' standardise internally and report coefficients back on whatever scale they
 #' were given.
 #'
+#' \strong{model_params$compute_importance}: by default (\code{FALSE}), no
+#' per-feature importance score is computed. Setting
+#' \code{compute_importance = TRUE} populates \code{feature_importance} with
+#' a score for every feature reaching the model (not just those "selected"),
+#' letting the same predictors be ranked/interpreted regardless of whether
+#' explicit or embedded feature selection was used. The score is
+#' method-specific: raw (signed) coefficients for \code{"lm"},
+#' \code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, and \code{"svr"}; impurity
+#' -based (unsigned) variable importance for \code{"ranger"} (via
+#' \code{ranger}'s \code{importance = "impurity"}, which adds negligible
+#' overhead - permutation importance is not currently supported, as it is
+#' substantially more expensive to compute). Coefficient-based scores are
+#' only comparable \emph{across features} when those features are on a
+#' common scale; \code{\link{predict_cv}} issues a warning if
+#' \code{compute_importance = TRUE} is requested together with a
+#' coefficient-based method while \code{scale != TRUE}. Aggregated,
+#' cross-fold importance is exposed by \code{\link{predict_cv}} via
+#' \code{fold_feature_importance} and visualised by
+#' \code{\link{plot_feature_importance}}.
+#'
 #' @param X_train Numeric matrix of dimensions n (samples) x p (features).
 #'   Training predictor matrix. Must have column names.
 #' @param Y_train Numeric vector of length n. Training response variable.
@@ -118,6 +138,13 @@
 #'       \code{\link{predict_model}} needs no special handling, since
 #'       \code{predict.train} applies the stored, training-derived transform
 #'       to \code{X_new} automatically. See Details.}
+#'     \item{\code{compute_importance}}{Logical. Defaults to \code{FALSE}.
+#'       If \code{TRUE}, computes a per-feature importance score (all
+#'       features, not just those "selected") appropriate to \code{method}:
+#'       raw coefficients for \code{"lm"}/\code{"glmnet"}/\code{"lasso"}/
+#'       \code{"ridge"}/\code{"svr"}, or impurity-based variable importance
+#'       for \code{"ranger"}. Opt-in because it adds (typically small)
+#'       computational overhead on top of fitting. See Details.}
 #'   }
 #'
 #' @return A named list of class \code{"predictomics_model"} containing:
@@ -148,6 +175,13 @@
 #'       \code{TRUE}, \code{caret_fit} stores its own \code{preProcess}
 #'       transform internally and applies it automatically at prediction
 #'       time; no separate field is needed for this.}
+#'     \item{\code{feature_importance}}{Named numeric vector of per-feature
+#'       importance scores (all features), sorted by decreasing absolute
+#'       value, or \code{NULL} if \code{compute_importance = FALSE}. See
+#'       Details for how this is computed per \code{method}.}
+#'     \item{\code{importance_type}}{Character string, \code{"coefficient"}
+#'       or \code{"impurity"}, describing what \code{feature_importance}
+#'       represents. \code{NA} if \code{compute_importance = FALSE}.}
 #'   }
 #'
 #' @seealso \code{\link{predict_model}}, \code{\link{predict_cv}}
@@ -208,6 +242,7 @@ run_model <- function(X_train, Y_train, params) {
   fold_id     <- params$fold_id     %||% 0L
   impute      <- params$impute      %||% "none"
   scale       <- params$scale       %||% FALSE
+  compute_importance <- params$compute_importance %||% FALSE
 
   # ---------------------------------------------------------------------------
   # 2b. Impute missing values in X_train (fill values computed on this fold
@@ -326,7 +361,8 @@ run_model <- function(X_train, Y_train, params) {
                           tuneLength  = if (is.null(tune_grid)) tune_length else NULL,
                           metric      = "RMSE",
                           num.threads = 1L,
-                          preProcess  = pre_process
+                          preProcess  = pre_process,
+                          importance  = if (compute_importance) "impurity" else "none"
                         )
                       },
 
@@ -357,20 +393,39 @@ run_model <- function(X_train, Y_train, params) {
   )
 
   # ---------------------------------------------------------------------------
+  # 6b. Compute feature importance (opt-in via model_params$compute_importance)
+  # ---------------------------------------------------------------------------
+  feature_importance <- NULL
+  importance_type     <- NA_character_
+
+  if (compute_importance) {
+    imp <- .compute_feature_importance(
+      caret_fit      = caret_fit,
+      method         = method,
+      col_names      = clean_names,
+      original_names = colnames(X_train)
+    )
+    feature_importance <- imp$scores
+    importance_type     <- imp$type
+  }
+
+  # ---------------------------------------------------------------------------
   # 7. Assemble and return fit object
   # ---------------------------------------------------------------------------
   structure(
     list(
-      caret_fit         = caret_fit,
-      method            = user_method,
-      best_params       = if (method == "lm") NA else caret_fit$bestTune,
-      inner_folds       = inner_folds,
-      col_names         = clean_names,
-      selected_features = selected_features$features,
-      selection_scores  = selected_features$scores,
-      impute_method     = impute,
-      impute_values     = impute_values,
-      scale             = scale
+      caret_fit          = caret_fit,
+      method             = user_method,
+      best_params        = if (method == "lm") NA else caret_fit$bestTune,
+      inner_folds        = inner_folds,
+      col_names          = clean_names,
+      selected_features  = selected_features$features,
+      selection_scores   = selected_features$scores,
+      impute_method      = impute,
+      impute_values      = impute_values,
+      scale              = scale,
+      feature_importance = feature_importance,
+      importance_type    = importance_type
     ),
     class = "predictomics_model"
   )
@@ -519,4 +574,90 @@ predict_model <- function(fit, X_new) {
   names(sorted_coefs) <- sorted_orig
 
   list(features = sorted_orig, scores = sorted_coefs)
+}
+
+
+# -----------------------------------------------------------------------------
+#' Compute per-feature importance scores from a fitted caret model
+#'
+#' @description
+#' Computes a model-appropriate, all-feature (not just "selected") importance
+#' score for each of the four supported model families, sorted by decreasing
+#' absolute value. Used to populate \code{feature_importance} in
+#' \code{\link{run_model}} when \code{model_params$compute_importance = TRUE}.
+#'
+#' @details
+#' \strong{lm}: raw OLS coefficients (signed).
+#'
+#' \strong{glmnet} (including \code{"ridge"}/\code{"lasso"}, resolved to
+#' \code{"glmnet"} before this is called): raw coefficients at the best
+#' \code{lambda} (signed), dense - unlike \code{.extract_glmnet_features()},
+#' ridge (and any zero coefficients) are included rather than excluded, since
+#' this is an importance ranking rather than a sparse selection.
+#'
+#' \strong{ranger}: impurity-based variable importance from
+#' \code{ranger::ranger} (non-negative; requires \code{importance = "impurity"}
+#' to have been passed at training time, which \code{\link{run_model}} does
+#' whenever \code{compute_importance = TRUE}).
+#'
+#' \strong{svmLinear} (\code{"svr"}): the primal weight vector
+#' \eqn{w = t(coef) \%*\% xmatrix} recovered from the linear-kernel
+#' \code{kernlab::ksvm} fit (signed) - the standard way to obtain feature
+#' weights from a linear SVM.
+#'
+#' @param caret_fit A fitted caret train object.
+#' @param method Character. The resolved method (\code{"lm"}, \code{"glmnet"},
+#'   \code{"ranger"}, or \code{"svmLinear"}).
+#' @param col_names Character vector. Sanitised column names from training.
+#' @param original_names Character vector. Original variable names to be
+#'   passed to output.
+#'
+#' @return A list with \code{scores} (named numeric vector, decreasing
+#'   absolute value, using original pre-sanitisation names) and \code{type}
+#'   (character, \code{"coefficient"} or \code{"impurity"}).
+#' @keywords internal
+# -----------------------------------------------------------------------------
+.compute_feature_importance <- function(caret_fit, method, col_names,
+                                        original_names) {
+
+  name_map <- stats::setNames(original_names, col_names)
+  type     <- NA_character_
+  scores   <- NULL
+
+  if (method == "lm") {
+    coef_vec <- stats::coef(caret_fit$finalModel)
+    coef_vec <- coef_vec[names(coef_vec) != "(Intercept)"]
+    scores   <- stats::setNames(as.numeric(coef_vec), name_map[names(coef_vec)])
+    type     <- "coefficient"
+
+  } else if (method == "glmnet") {
+    best_lambda <- caret_fit$bestTune$lambda
+    coef_mat    <- coef(caret_fit$finalModel, s = best_lambda)
+    coef_vec    <- as.numeric(coef_mat)
+    coef_names  <- rownames(coef_mat)
+    coef_vec    <- stats::setNames(coef_vec, coef_names)
+    coef_vec    <- coef_vec[names(coef_vec) != "(Intercept)"]
+    scores      <- stats::setNames(coef_vec, name_map[names(coef_vec)])
+    type        <- "coefficient"
+
+  } else if (method == "ranger") {
+    imp <- caret_fit$finalModel$variable.importance
+    scores <- stats::setNames(as.numeric(imp), name_map[names(imp)])
+    type   <- "impurity"
+
+  } else if (method == "svmLinear") {
+    ksvm_fit <- caret_fit$finalModel
+    w        <- as.numeric(matrix(ksvm_fit@coef[[1]], nrow = 1) %*%
+                           ksvm_fit@xmatrix[[1]])
+    names(w) <- colnames(ksvm_fit@xmatrix[[1]])
+    scores   <- stats::setNames(w, name_map[names(w)])
+    type     <- "coefficient"
+  }
+
+  if (!is.null(scores)) {
+    ord    <- order(abs(scores), decreasing = TRUE)
+    scores <- scores[ord]
+  }
+
+  list(scores = scores, type = type)
 }

@@ -76,6 +76,9 @@ results for this fold, or \code{NULL}.}
 \item{\code{embedded_selection_diagnostics}}{Named list of embedded
 selection results (lasso/glmnet non-zero features) for this fold,
 or \code{NULL}.}
+\item{\code{feature_importance_diagnostics}}{Named list with
+\code{scores} and \code{type} from this fold's fitted model, or
+\code{NULL} if \code{model_params$compute_importance != TRUE}.}
 }
 }
 \description{

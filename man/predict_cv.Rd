@@ -182,6 +182,12 @@ dearseq filter. \code{NULL} if
 \code{n_folds}, each element containing \code{selected_features}
 and \code{n_selected} from embedded selection (lasso/glmnet).
 \code{NULL} if the model does not perform embedded selection.}
+\item{\code{fold_feature_importance}}{A list of length \code{n_folds},
+each element containing \code{scores} (named numeric vector) and
+\code{type} (\code{"coefficient"} or \code{"impurity"}) from that
+fold's fitted model. \code{NULL} unless
+\code{model_params$compute_importance = TRUE}. See
+\code{\link{run_model}} and \code{\link{plot_feature_importance}}.}
 \item{\code{call}}{The matched call.}
 }
 }
