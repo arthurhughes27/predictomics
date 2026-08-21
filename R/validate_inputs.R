@@ -406,6 +406,13 @@
     stop("[predictomics] model_params$scale must be TRUE or FALSE.",
          call. = FALSE)
 
+  # compute_importance
+  compute_importance <- params$compute_importance %||% FALSE
+  if (!is.logical(compute_importance) || length(compute_importance) != 1L ||
+      is.na(compute_importance))
+    stop("[predictomics] model_params$compute_importance must be TRUE or ",
+         "FALSE.", call. = FALSE)
+
   invisible(NULL)
 }
 

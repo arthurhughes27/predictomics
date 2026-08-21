@@ -59,6 +59,9 @@
 #'     \item{\code{embedded_selection_diagnostics}}{Named list of embedded
 #'       selection results (lasso/glmnet non-zero features) for this fold,
 #'       or \code{NULL}.}
+#'     \item{\code{feature_importance_diagnostics}}{Named list with
+#'       \code{scores} and \code{type} from this fold's fitted model, or
+#'       \code{NULL} if \code{model_params$compute_importance != TRUE}.}
 #'   }
 #' @keywords internal
 # -----------------------------------------------------------------------------
@@ -178,6 +181,7 @@
     # treatment predictor): predict the training-fold mean of Y directly,
     # bypassing run_model()/predict_model() entirely.
     embedded_selection_diagnostics <- NULL
+    feature_importance_diagnostics <- NULL
     predictions[test_idx] <- mean(Y_train)
 
   } else {
@@ -199,12 +203,23 @@
       NULL
     }
 
+    # -- Feature importance diagnostics ---------------------------------------
+    feature_importance_diagnostics <- if (!is.null(model_fit$feature_importance)) {
+      list(
+        scores = model_fit$feature_importance,
+        type   = model_fit$importance_type
+      )
+    } else {
+      NULL
+    }
+
     predictions[test_idx] <- predict_model(fit = model_fit, X_new = X_test)
   }
 
   list(
     predictions                    = predictions,
     selection_diagnostics          = selection_diagnostics,
-    embedded_selection_diagnostics = embedded_selection_diagnostics
+    embedded_selection_diagnostics = embedded_selection_diagnostics,
+    feature_importance_diagnostics = feature_importance_diagnostics
   )
 }

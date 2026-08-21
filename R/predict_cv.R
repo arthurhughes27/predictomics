@@ -296,6 +296,12 @@
 #'       \code{n_folds}, each element containing \code{selected_features}
 #'       and \code{n_selected} from embedded selection (lasso/glmnet).
 #'       \code{NULL} if the model does not perform embedded selection.}
+#'     \item{\code{fold_feature_importance}}{A list of length \code{n_folds},
+#'       each element containing \code{scores} (named numeric vector) and
+#'       \code{type} (\code{"coefficient"} or \code{"impurity"}) from that
+#'       fold's fitted model. \code{NULL} unless
+#'       \code{model_params$compute_importance = TRUE}. See
+#'       \code{\link{run_model}} and \code{\link{plot_feature_importance}}.}
 #'     \item{\code{call}}{The matched call.}
 #'   }
 #'
@@ -794,6 +800,27 @@ predict_cv <- function(Y,
   }
 
   # ---------------------------------------------------------------------------
+  # 3b. compute_importance + scale warning
+  # ---------------------------------------------------------------------------
+  compute_importance <- model_params$compute_importance %||% FALSE
+  coefficient_based_methods <- c("lm", "glmnet", "ridge", "lasso", "svr")
+
+  if (compute_importance && model_params$method %in% coefficient_based_methods &&
+      !isTRUE(model_params$scale)) {
+    warning(
+      "[predictomics] model_params$compute_importance = TRUE with method = '",
+      model_params$method, "' but model_params$scale is not TRUE: feature ",
+      "importance for this method is a raw (signed) coefficient, which is ",
+      "only comparable across features that are on a common scale. Without ",
+      "model_params$scale = TRUE, features with larger raw magnitudes will ",
+      "tend to receive smaller coefficients (and vice versa), making the ",
+      "importance ranking misleading. Set model_params$scale = TRUE for a ",
+      "meaningful cross-feature comparison.",
+      call. = FALSE, immediate. = TRUE
+    )
+  }
+
+  # ---------------------------------------------------------------------------
   # 5. Prepare protected predictor matrices (once, outside loop - no leakage)
   # ---------------------------------------------------------------------------
   treatment_mat <- if (!is.null(treatment_pipeline) && treatment_predictor) {
@@ -950,6 +977,8 @@ predict_cv <- function(Y,
     vector("list", folds) else NULL
   fold_embedded_selection_diagnostics <- if (is_embedded)
     vector("list", folds) else NULL
+  fold_feature_importance             <- if (compute_importance)
+    vector("list", folds) else NULL
 
   for (k in seq_len(folds)) {
     test_idx              <- which(fold_ids == k)
@@ -961,6 +990,9 @@ predict_cv <- function(Y,
     if (is_embedded)
       fold_embedded_selection_diagnostics[[k]] <-
       fold_results[[k]]$embedded_selection_diagnostics
+
+    if (compute_importance)
+      fold_feature_importance[[k]] <- fold_results[[k]]$feature_importance_diagnostics
   }
 
   if (verbose) message("[predictomics] CV complete.")
@@ -1007,6 +1039,7 @@ predict_cv <- function(Y,
       fold_selection_diagnostics          = fold_selection_diagnostics,
       outside_cv_selection                = outside_cv_selection,
       fold_embedded_selection_diagnostics = fold_embedded_selection_diagnostics,
+      fold_feature_importance             = fold_feature_importance,
       call                                = cl
     ),
     class = "predictomics"

@@ -13,7 +13,8 @@
 \value{
 The same object with \code{selection_scores} removed from
 \code{dearseq_selection}, each element of
-\code{fold_selection_diagnostics}, and \code{outside_cv_selection}.
+\code{fold_selection_diagnostics}, and \code{outside_cv_selection}, and
+\code{scores} removed from each element of \code{fold_feature_importance}.
 }
 \description{
 Used by \code{\link{compare_pipelines}} when \code{diagnostics = "summary"}
@@ -29,6 +30,9 @@ and \code{n_selected} - the fields \code{\link{compare_pipelines}}'s own
 results table and \code{plot()}/\code{print()} methods rely on - intact.
 \code{fold_embedded_selection_diagnostics} (lasso/glmnet non-zero
 coefficients) is left untouched, since it is already limited to the
-selected features rather than every candidate.
+selected features rather than every candidate. \code{fold_feature_importance}
+(populated when \code{model_params$compute_importance = TRUE}) is the same
+kind of dense, every-feature-per-fold data, so its \code{scores} element is
+stripped the same way, leaving \code{type} intact.
 }
 \keyword{internal}

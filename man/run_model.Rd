@@ -49,6 +49,13 @@ tuning, then refit on the full training data for the final model;
 \code{\link{predict_model}} needs no special handling, since
 \code{predict.train} applies the stored, training-derived transform
 to \code{X_new} automatically. See Details.}
+\item{\code{compute_importance}}{Logical. Defaults to \code{FALSE}.
+If \code{TRUE}, computes a per-feature importance score (all
+features, not just those "selected") appropriate to \code{method}:
+raw coefficients for \code{"lm"}/\code{"glmnet"}/\code{"lasso"}/
+\code{"ridge"}/\code{"svr"}, or impurity-based variable importance
+for \code{"ranger"}. Opt-in because it adds (typically small)
+computational overhead on top of fitting. See Details.}
 }}
 }
 \value{
@@ -80,6 +87,13 @@ values used to impute \code{X_train}, or \code{NULL} if
 \code{TRUE}, \code{caret_fit} stores its own \code{preProcess}
 transform internally and applies it automatically at prediction
 time; no separate field is needed for this.}
+\item{\code{feature_importance}}{Named numeric vector of per-feature
+importance scores (all features), sorted by decreasing absolute
+value, or \code{NULL} if \code{compute_importance = FALSE}. See
+Details for how this is computed per \code{method}.}
+\item{\code{importance_type}}{Character string, \code{"coefficient"}
+or \code{"impurity"}, describing what \code{feature_importance}
+represents. \code{NA} if \code{compute_importance = FALSE}.}
 }
 }
 \description{
@@ -138,6 +152,26 @@ splits are invariant to per-feature monotonic rescaling), and is largely
 redundant for \code{"glmnet"}/\code{"lasso"}/\code{"ridge"}, which already
 standardise internally and report coefficients back on whatever scale they
 were given.
+
+\strong{model_params$compute_importance}: by default (\code{FALSE}), no
+per-feature importance score is computed. Setting
+\code{compute_importance = TRUE} populates \code{feature_importance} with
+a score for every feature reaching the model (not just those "selected"),
+letting the same predictors be ranked/interpreted regardless of whether
+explicit or embedded feature selection was used. The score is
+method-specific: raw (signed) coefficients for \code{"lm"},
+\code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, and \code{"svr"}; impurity
+-based (unsigned) variable importance for \code{"ranger"} (via
+\code{ranger}'s \code{importance = "impurity"}, which adds negligible
+overhead - permutation importance is not currently supported, as it is
+substantially more expensive to compute). Coefficient-based scores are
+only comparable \emph{across features} when those features are on a
+common scale; \code{\link{predict_cv}} issues a warning if
+\code{compute_importance = TRUE} is requested together with a
+coefficient-based method while \code{scale != TRUE}. Aggregated,
+cross-fold importance is exposed by \code{\link{predict_cv}} via
+\code{fold_feature_importance} and visualised by
+\code{\link{plot_feature_importance}}.
 }
 \examples{
 \dontrun{
