@@ -298,6 +298,29 @@ test_that("run_model computes feature_importance for svr via the linear weight v
   expect_equal(length(fit$feature_importance), ncol(d$X))
 })
 
+test_that("svr feature_importance weight vector reconstructs predict() exactly (affine check)", {
+  testthat::skip_if_not_installed("kernlab")
+  d <- .make_model_data()
+  fit <- run_model(X_train = d$X, Y_train = d$Y,
+                   params = list(method = "svr", inner_folds = 3,
+                                 scale = TRUE, compute_importance = TRUE))
+
+  # A linear-kernel SVM's decision function is exactly affine in the raw
+  # predictors, so the recovered weight vector must exactly reconstruct the
+  # difference in predictions between any two rows - this is what
+  # .svm_linear_weights() relies on, independent of kernlab's internal
+  # representation.
+  x1 <- d$X[1, , drop = FALSE]
+  x2 <- d$X[2, , drop = FALSE]
+  pred1 <- predict_model(fit, X_new = x1)
+  pred2 <- predict_model(fit, X_new = x2)
+
+  w             <- fit$feature_importance[colnames(d$X)]
+  delta_manual  <- sum(w * (x2[1, ] - x1[1, ]))
+
+  expect_equal(as.numeric(pred2 - pred1), delta_manual, tolerance = 1e-6)
+})
+
 test_that("predict_cv warns when compute_importance = TRUE, coefficient-based method, scale != TRUE", {
   d <- .make_model_data()
   expect_warning(

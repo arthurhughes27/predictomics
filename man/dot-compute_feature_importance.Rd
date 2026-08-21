@@ -42,16 +42,14 @@ this is an importance ranking rather than a sparse selection.
 to have been passed at training time, which \code{\link{run_model}} does
 whenever \code{compute_importance = TRUE}).
 
-\strong{svmLinear} (\code{"svr"}): the primal weight vector
-\eqn{w = t(coef) \%*\% xmatrix} recovered from the linear-kernel
-\code{kernlab::ksvm} fit (signed) - the standard way to obtain feature
-weights from a linear SVM.
+\strong{svmLinear} (\code{"svr"}): the primal weight vector (signed),
+recovered via \code{\link{.svm_linear_weights}} rather than by reaching
+into the fitted \code{kernlab::ksvm} object's internal representation -
+see that function's documentation for why.
 
 Feature names are assigned to each of these vectors purely by
 \strong{position} (via \code{\link{.map_importance_names}}), not by
 matching whatever name (if any) the underlying model/package attaches to
-its own output - see \code{\link{.map_importance_names}} for why this
-matters in practice (\code{kernlab} in particular does not reliably name
-the columns of the matrix a \code{"svr"} weight vector is derived from).
+its own output.
 }
 \keyword{internal}
