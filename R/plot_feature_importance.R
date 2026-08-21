@@ -25,16 +25,16 @@
 #'
 #' By default (\code{standardize = TRUE}), importance is first standardised
 #' \strong{within each fold}: the most important feature in that fold is set
-#' to 100\%, and every other feature's absolute importance in that fold is
-#' expressed as a percentage of it. The plotted value is then each feature's
-#' mean standardised importance across the folds in which it was present.
-#' This makes features comparable across folds even when the raw magnitude
-#' of importance drifts from fold to fold (e.g. due to refitting on
-#' different training partitions), since every fold contributes on the same
-#' 0-100\% scale regardless of its own raw scale. Set \code{standardize =
-#' FALSE} to instead plot the raw mean absolute importance (the previous
-#' default), e.g. to compare absolute coefficient/impurity magnitudes
-#' directly.
+#' to 100 percent, and every other feature's absolute importance in that
+#' fold is expressed as a percentage of it. The plotted value is then each
+#' feature's mean standardised importance across the folds in which it was
+#' present. This makes features comparable across folds even when the raw
+#' magnitude of importance drifts from fold to fold (e.g. due to refitting
+#' on different training partitions), since every fold contributes on the
+#' same 0-100 percent scale regardless of its own raw scale. Set
+#' \code{standardize = FALSE} to instead plot the raw mean absolute
+#' importance (the previous default), e.g. to compare absolute
+#' coefficient/impurity magnitudes directly.
 #'
 #' Importance scores are method-specific (see \code{\link{run_model}}):
 #' raw coefficients (signed) for \code{"lm"}, \code{"glmnet"}, \code{"lasso"},
@@ -44,8 +44,8 @@
 #' addition to the one already issued by \code{\link{predict_cv}} at fit
 #' time) when \code{x$model_params$scale} is not \code{TRUE} and the fitted
 #' method is coefficient-based - this applies regardless of \code{standardize},
-#' since within-fold standardisation does not fix miscalibration
-#' \emph{between} features within the same fold.
+#' since within-fold standardisation does not fix miscalibration between
+#' features within the same fold.
 #'
 #' @param x A \code{predictomics} object returned by \code{\link{predict_cv}},
 #'   fitted with \code{model_params$compute_importance = TRUE}.
@@ -53,10 +53,10 @@
 #'   standardised, or raw, absolute importance - see \code{standardize})
 #'   to display. Defaults to \code{20}.
 #' @param standardize Logical. If \code{TRUE} (default), importance is
-#'   standardised within each fold so the top feature in that fold is 100\%
-#'   and all others are a percentage of it, before averaging across folds.
-#'   If \code{FALSE}, the raw mean absolute importance is plotted instead.
-#'   See Details.
+#'   standardised within each fold so the top feature in that fold is 100
+#'   percent and all others are a percentage of it, before averaging across
+#'   folds. If \code{FALSE}, the raw mean absolute importance is plotted
+#'   instead. See Details.
 #' @param ... Additional arguments passed to \code{ggplot2::theme}.
 #'
 #' @return A \code{ggplot} object.
