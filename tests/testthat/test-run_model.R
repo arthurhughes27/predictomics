@@ -291,6 +291,11 @@ test_that("run_model computes feature_importance for svr via the linear weight v
 
   expect_identical(fit$importance_type, "coefficient")
   expect_setequal(names(fit$feature_importance), colnames(d$X))
+  # Regression test: kernlab's own xmatrix slot does not reliably carry
+  # column names, so names must come from positional mapping, never from
+  # kernlab's self-reported (possibly NA/missing) names.
+  expect_false(anyNA(names(fit$feature_importance)))
+  expect_equal(length(fit$feature_importance), ncol(d$X))
 })
 
 test_that("predict_cv warns when compute_importance = TRUE, coefficient-based method, scale != TRUE", {

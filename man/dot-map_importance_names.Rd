@@ -2,13 +2,14 @@
 % Please edit documentation in R/run_model.R
 \name{.map_importance_names}
 \alias{.map_importance_names}
-\title{Map sanitised feature names back to original names, positionally}
+\title{Map a per-feature importance vector back to original feature names,
+positionally}
 \usage{
-.map_importance_names(current_names, col_names, original_names)
+.map_importance_names(current_length, col_names, original_names)
 }
 \arguments{
-\item{current_names}{Character vector of names as reported by the fitted
-model.}
+\item{current_length}{Integer. Length of the coefficient/importance
+vector reported by the fitted model.}
 
 \item{col_names}{Character vector. Sanitised column names from training,
 in the training matrix's column order.}
@@ -17,18 +18,32 @@ in the training matrix's column order.}
 feature names, in the same order as \code{col_names}.}
 }
 \value{
-Character vector, same length as \code{current_names}, with no
-\code{NA} values.
+\code{original_names}, unchanged.
 }
 \description{
-Translates the names returned by a fitted model (\code{coef()},
-\code{variable.importance}, or a \code{kernlab} weight vector) back to the
-original, pre-sanitisation feature names. Matched by \strong{position}
-within \code{col_names} rather than assuming every model-reported name is
-guaranteed to string-match an entry of \code{col_names} exactly (a
-name-based lookup silently yields \code{NA} on any mismatch, which is
-unsafe to use downstream as a matrix/vector name). Any name that still
-cannot be resolved this way falls back to the model-reported name itself
-rather than \code{NA}, so the result is always fully named.
+Returns \code{original_names} directly, after checking that
+\code{current_length} - the length of the coefficient/importance vector
+actually reported by the fitted model - equals \code{length(col_names)}.
+}
+\details{
+None of the four supported model families ever drop or reorder features
+when reporting per-feature coefficients/importance for \emph{every}
+feature (unlike \code{.extract_glmnet_features()}, which subsets to a
+sparse selection): \code{lm}'s and \code{glmnet}'s coefficient vectors
+preserve the fitting data's column order, \code{ranger}'s
+\code{variable.importance} covers every splitting variable, and a linear
+\code{kernlab::ksvm} fit's derived weight vector has one entry per
+training column. It is therefore both simpler and safer to trust this
+positional guarantee than to rely on whatever name each model/package
+happens to attach to its own output - in particular, \code{kernlab}'s
+\code{@xmatrix} slot does not reliably carry column names, which
+previously caused \code{\link{plot_feature_importance}} to receive
+\code{NA}-named \code{"svr"} scores.
+
+If the length check ever fails, that indicates a genuine mismatch between
+the fitted model's own feature bookkeeping and \code{run_model()}'s -
+rather than silently producing corrupted (partially \code{NA}) importance
+scores, this raises an informative error so the mismatch is caught at the
+point of fitting.
 }
 \keyword{internal}
