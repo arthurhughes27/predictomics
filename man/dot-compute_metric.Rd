@@ -2,22 +2,28 @@
 % Please edit documentation in R/run_selection.R
 \name{.compute_metric}
 \alias{.compute_metric}
-\title{Compute a scalar prediction metric from observed and predicted vectors}
+\title{Compute a scalar (or per-column) prediction metric from observed and
+predicted values}
 \usage{
 .compute_metric(obs, pred, metric)
 }
 \arguments{
-\item{obs}{Numeric vector of observed values.}
+\item{obs}{Numeric vector of observed values, length n.}
 
-\item{pred}{Numeric vector of predicted values.}
+\item{pred}{Numeric vector (length n) or matrix (n x k, one predicted
+series per column) of predicted values.}
 
 \item{metric}{Character string. One of \code{"rmse"}, \code{"srmse"},
 \code{"r2"}, \code{"spearman"}.}
 }
 \value{
-A single numeric value.
+A single numeric value if \code{pred} is a vector, or a
+length-\code{ncol(pred)} numeric vector (one value per column) if
+\code{pred} is a matrix - \verb{cor()}/\verb{colMeans()} vectorise across
+columns natively, so no explicit per-column loop is needed either way.
 }
 \description{
-Compute a scalar prediction metric from observed and predicted vectors
+Compute a scalar (or per-column) prediction metric from observed and
+predicted values
 }
 \keyword{internal}
