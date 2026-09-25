@@ -640,6 +640,48 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
 #'     metric (higher is better, so positive gain = improvement).
 #' }
 #'
+#' @details
+#' \strong{Implementation note (vectorised across features).} A naive
+#' implementation fits one \code{lm(.Y ~ .feat + covariates)} model per
+#' feature per inner fold - for p features and k inner folds, that is p*k
+#' separate \code{lm()} calls, whose fixed per-call overhead (formula
+#' parsing, \code{model.frame} construction) dominates runtime when each
+#' regression has only one non-covariate predictor. This implementation
+#' instead computes, per inner fold, only ONE QR decomposition of the
+#' shared covariates(+intercept) design matrix \code{D}, then obtains every
+#' feature's contribution via the Frisch-Waugh-Lovell (FWL) theorem:
+#' \enumerate{
+#'   \item Regress \code{Y_train} on \code{D} (the baseline model) via
+#'     \code{qr.coef()}, giving residuals \code{e_Y} and baseline
+#'     predictions.
+#'   \item Regress \emph{every column of \code{X_train} on \code{D} at
+#'     once} - \code{qr.coef()} accepts a matrix right-hand side, so this
+#'     is a single shared computation across all p features, not a loop -
+#'     giving each feature's residual \code{e_Xj} after removing
+#'     \code{D}'s (and only \code{D}'s) linear effect.
+#'   \item By FWL, the coefficient feature j would get in a full
+#'     regression of \code{Y} on \code{[D, feat_j]} equals the simple
+#'     (through-origin) regression slope of \code{e_Y} on \code{e_Xj}:
+#'     \code{sum(e_Xj * e_Y) / sum(e_Xj^2)} - computed for every feature at
+#'     once via a single pair of \code{colSums()} calls.
+#'   \item The full model's out-of-sample prediction for feature j,
+#'     expressed only in terms of quantities already computed (no need to
+#'     separately recover the full model's own covariate coefficients,
+#'     which differ from the baseline's), is: \code{baseline_pred_test +
+#'     slope_j * (X_test[, j] - D_test \%*\% beta_X[, j])} - i.e. the
+#'     baseline prediction, adjusted by feature j's out-of-covariate-sample
+#'     residual scaled by its own slope. This identity follows directly
+#'     from substituting the FWL decomposition of the full model's
+#'     covariate coefficients into its prediction equation, and is exact
+#'     (not an approximation) up to floating-point precision, for every
+#'     feature simultaneously.
+#' }
+#' The only per-feature loop remaining anywhere in this function is
+#' implicit in vectorised matrix operations (\code{colSums()}, matrix
+#' multiplication) - there is no explicit \code{for (j in seq_len(p))}
+#' loop, and each inner fold costs one QR decomposition plus a handful of
+#' matrix operations regardless of p, rather than p separate model fits.
+#'
 #' @param X_train Numeric matrix. Training features.
 #' @param Y_train Numeric vector. Training response.
 #' @param covariates Numeric matrix or \code{NULL}. Baseline covariates.
@@ -664,99 +706,95 @@ run_selection <- function(X_train, Y_train = NULL, covariates = NULL,
   inner_fold_ids <- make_folds(n = n, cv_type = "kfold",
                                k = inner_folds, seed = seed)
 
-  # ---------------------------------------------------------------------------
-  # Pre-build baseline design matrix (covariates or intercept only)
-  # Used identically across all feature models
-  # ---------------------------------------------------------------------------
   has_covariates <- !is.null(covariates) && ncol(covariates) > 0L
 
   # ---------------------------------------------------------------------------
-  # Compute baseline CV predictions once (shared across all features)
+  # Per-fold: one shared QR decomposition of the covariates(+intercept)
+  # design matrix, then every feature's baseline-adjusted CV prediction via
+  # vectorised matrix operations (see this function's Details for the
+  # Frisch-Waugh-Lovell derivation making this exact, not approximate).
   # ---------------------------------------------------------------------------
   baseline_pred <- numeric(n)
+  feat_pred     <- matrix(NA_real_, nrow = n, ncol = p,
+                          dimnames = list(NULL, feat_names))
 
   for (f in seq_len(inner_folds)) {
 
     tr  <- which(inner_fold_ids != f)
     tst <- which(inner_fold_ids == f)
 
-    Y_tr  <- Y_train[tr]
-    Y_tst <- Y_train[tst]
+    Y_tr <- Y_train[tr]
 
     if (has_covariates) {
-      cov_tr  <- as.data.frame(covariates[tr,  , drop = FALSE])
-      cov_tst <- as.data.frame(covariates[tst, , drop = FALSE])
-      df_tr   <- cbind(data.frame(.Y = Y_tr), cov_tr)
-      df_tst  <- cov_tst
-      fit     <- lm(.Y ~ ., data = df_tr)
+      D_tr  <- cbind(1, as.matrix(covariates[tr,  , drop = FALSE]))
+      D_tst <- cbind(1, as.matrix(covariates[tst, , drop = FALSE]))
     } else {
-      df_tr  <- data.frame(.Y = Y_tr)
-      df_tst <- data.frame(.intercept = rep(1, length(tst)))
-      fit    <- lm(.Y ~ 1, data = df_tr)
+      D_tr  <- matrix(1, nrow = length(tr),  ncol = 1L)
+      D_tst <- matrix(1, nrow = length(tst), ncol = 1L)
     }
 
-    baseline_pred[tst] <- predict(fit, newdata = df_tst)
+    qr_D <- qr(D_tr)
+
+    # --- Baseline (covariates/intercept-only) model ---
+    beta_Y <- qr.coef(qr_D, Y_tr)
+    baseline_pred[tst] <- as.numeric(D_tst %*% beta_Y)
+
+    # --- Every feature's own "regress on the same covariates" step, all p
+    # columns at once (qr.coef() accepts a matrix right-hand side) ---
+    X_tr  <- X_train[tr,  , drop = FALSE]
+    X_tst <- X_train[tst, , drop = FALSE]
+
+    beta_X       <- qr.coef(qr_D, X_tr)   # ncol(D) x p
+    X_tr_fitted  <- D_tr  %*% beta_X      # n_tr  x p
+    X_tst_fitted <- D_tst %*% beta_X      # n_tst x p
+
+    X_tr_resid <- X_tr - X_tr_fitted                    # n_tr x p
+    Y_tr_resid <- Y_tr - as.numeric(D_tr %*% beta_Y)     # length n_tr
+
+    # FWL slope for every feature at once; a zero-variance-after-covariates
+    # feature (denominator 0) contributes nothing beyond baseline (slope 0)
+    # rather than propagating NaN.
+    denom <- colSums(X_tr_resid^2)
+    slope <- ifelse(denom > 0, colSums(X_tr_resid * Y_tr_resid) / denom, 0)
+
+    feat_pred[tst, ] <- baseline_pred[tst] +
+      sweep(X_tst - X_tst_fitted, 2, slope, `*`)
   }
 
   baseline_score <- .compute_metric(Y_train, baseline_pred, metric)
+  feature_score  <- .compute_metric(Y_train, feat_pred, metric)  # length-p vector
 
-  # ---------------------------------------------------------------------------
-  # Compute feature model CV predictions and gain for each feature
-  # ---------------------------------------------------------------------------
-  gains <- numeric(p)
+  gains <- .compute_gain(baseline_score, feature_score, metric)
   names(gains) <- feat_names
-
-  for (j in seq_len(p)) {
-
-    feat_pred <- numeric(n)
-
-    for (f in seq_len(inner_folds)) {
-
-      tr  <- which(inner_fold_ids != f)
-      tst <- which(inner_fold_ids == f)
-
-      Y_tr   <- Y_train[tr]
-      feat_j <- X_train[, j]
-
-      if (has_covariates) {
-        cov_tr  <- as.data.frame(covariates[tr,  , drop = FALSE])
-        cov_tst <- as.data.frame(covariates[tst, , drop = FALSE])
-        df_tr   <- cbind(data.frame(.Y = Y_tr, .feat = feat_j[tr]),  cov_tr)
-        df_tst  <- cbind(data.frame(.feat = feat_j[tst]),             cov_tst)
-      } else {
-        df_tr  <- data.frame(.Y = Y_tr,       .feat = feat_j[tr])
-        df_tst <- data.frame(.feat = feat_j[tst])
-      }
-
-      fit <- lm(.Y ~ ., data = df_tr)
-      feat_pred[tst] <- predict(fit, newdata = df_tst)
-    }
-
-    feature_score <- .compute_metric(Y_train, feat_pred, metric)
-    gains[j]      <- .compute_gain(baseline_score, feature_score, metric)
-  }
-
   gains
 }
 
 
 # -----------------------------------------------------------------------------
-#' Compute a scalar prediction metric from observed and predicted vectors
+#' Compute a scalar (or per-column) prediction metric from observed and
+#' predicted values
 #'
-#' @param obs Numeric vector of observed values.
-#' @param pred Numeric vector of predicted values.
+#' @param obs Numeric vector of observed values, length n.
+#' @param pred Numeric vector (length n) or matrix (n x k, one predicted
+#'   series per column) of predicted values.
 #' @param metric Character string. One of \code{"rmse"}, \code{"srmse"},
 #'   \code{"r2"}, \code{"spearman"}.
-#' @return A single numeric value.
+#' @return A single numeric value if \code{pred} is a vector, or a
+#'   length-\code{ncol(pred)} numeric vector (one value per column) if
+#'   \code{pred} is a matrix - `cor()`/`colMeans()` vectorise across
+#'   columns natively, so no explicit per-column loop is needed either way.
 #' @keywords internal
 # -----------------------------------------------------------------------------
 .compute_metric <- function(obs, pred, metric) {
 
+  se  <- (pred - obs)^2
+  mse <- if (is.matrix(pred)) colMeans(se) else mean(se)
+
   switch(metric,
-         rmse     = sqrt(mean((obs - pred)^2)),
-         srmse    = sqrt(mean((obs - pred)^2)) / sd(obs),
-         r2       = cor(obs, pred, method = "pearson")^2,
-         spearman = cor(obs, pred, method = "spearman")
+         rmse     = sqrt(mse),
+         srmse    = sqrt(mse) / sd(obs),
+         r2       = as.numeric(cor(obs, pred, method = "pearson"))^2,
+         spearman = as.numeric(cor(obs, pred, method = "spearman"))
   )
 }
 

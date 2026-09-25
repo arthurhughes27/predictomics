@@ -39,4 +39,46 @@ metric (lower is better, so positive gain = improvement).
 metric (higher is better, so positive gain = improvement).
 }
 }
+\details{
+\strong{Implementation note (vectorised across features).} A naive
+implementation fits one \code{lm(.Y ~ .feat + covariates)} model per
+feature per inner fold - for p features and k inner folds, that is p*k
+separate \code{lm()} calls, whose fixed per-call overhead (formula
+parsing, \code{model.frame} construction) dominates runtime when each
+regression has only one non-covariate predictor. This implementation
+instead computes, per inner fold, only ONE QR decomposition of the
+shared covariates(+intercept) design matrix \code{D}, then obtains every
+feature's contribution via the Frisch-Waugh-Lovell (FWL) theorem:
+\enumerate{
+\item Regress \code{Y_train} on \code{D} (the baseline model) via
+\code{qr.coef()}, giving residuals \code{e_Y} and baseline
+predictions.
+\item Regress \emph{every column of \code{X_train} on \code{D} at
+once} - \code{qr.coef()} accepts a matrix right-hand side, so this
+is a single shared computation across all p features, not a loop -
+giving each feature's residual \code{e_Xj} after removing
+\code{D}'s (and only \code{D}'s) linear effect.
+\item By FWL, the coefficient feature j would get in a full
+regression of \code{Y} on \code{[D, feat_j]} equals the simple
+(through-origin) regression slope of \code{e_Y} on \code{e_Xj}:
+\code{sum(e_Xj * e_Y) / sum(e_Xj^2)} - computed for every feature at
+once via a single pair of \code{colSums()} calls.
+\item The full model's out-of-sample prediction for feature j,
+expressed only in terms of quantities already computed (no need to
+separately recover the full model's own covariate coefficients,
+which differ from the baseline's), is: \code{baseline_pred_test +
+slope_j * (X_test[, j] - D_test \%*\% beta_X[, j])} - i.e. the
+baseline prediction, adjusted by feature j's out-of-covariate-sample
+residual scaled by its own slope. This identity follows directly
+from substituting the FWL decomposition of the full model's
+covariate coefficients into its prediction equation, and is exact
+(not an approximation) up to floating-point precision, for every
+feature simultaneously.
+}
+The only per-feature loop remaining anywhere in this function is
+implicit in vectorised matrix operations (\code{colSums()}, matrix
+multiplication) - there is no explicit \code{for (j in seq_len(p))}
+loop, and each inner fold costs one QR decomposition plus a handful of
+matrix operations regardless of p, rather than p separate model fits.
+}
 \keyword{internal}
