@@ -55,7 +55,7 @@ coefficient/impurity magnitudes directly.
 
 Importance scores are method-specific (see \code{\link{run_model}}):
 raw coefficients (signed) for \code{"lm"}, \code{"glmnet"}, \code{"lasso"},
-\code{"ridge"}, and \code{"svr"}; impurity-based variable importance
+\code{"ridge"}, and \code{"svr"}; impurity-based feature importance
 (unsigned) for \code{"ranger"}. Because coefficient-based scores are only
 comparable across features on a common scale, a warning is issued (in
 addition to the one already issued by \code{\link{predict_cv}} at fit

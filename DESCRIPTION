@@ -7,7 +7,6 @@ Description: Standardised interface for prediction tasks in the context of omics
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 8.0.0
 Suggests:
     testthat (>= 3.0.0),
     SurrogateRank,
@@ -21,3 +20,4 @@ Config/testthat/edition: 3
 Imports:
     caret, ggplot2, future.apply, scales, tidyr, ggpattern
 VignetteBuilder: knitr
+Config/roxygen2/version: 8.1.0

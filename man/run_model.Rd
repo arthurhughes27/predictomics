@@ -53,7 +53,7 @@ to \code{X_new} automatically. See Details.}
 If \code{TRUE}, computes a per-feature importance score (all
 features, not just those "selected") appropriate to \code{method}:
 raw coefficients for \code{"lm"}/\code{"glmnet"}/\code{"lasso"}/
-\code{"ridge"}/\code{"svr"}, or impurity-based variable importance
+\code{"ridge"}/\code{"svr"}, or impurity-based feature importance
 for \code{"ranger"}. Opt-in because it adds (typically small)
 computational overhead on top of fitting. See Details.}
 }}
@@ -161,7 +161,7 @@ letting the same predictors be ranked/interpreted regardless of whether
 explicit or embedded feature selection was used. The score is
 method-specific: raw (signed) coefficients for \code{"lm"},
 \code{"glmnet"}, \code{"lasso"}, \code{"ridge"}, and \code{"svr"}; impurity
--based (unsigned) variable importance for \code{"ranger"} (via
+-based (unsigned) feature importance for \code{"ranger"} (via
 \code{ranger}'s \code{importance = "impurity"}, which adds negligible
 overhead - permutation importance is not currently supported, as it is
 substantially more expensive to compute). Coefficient-based scores are

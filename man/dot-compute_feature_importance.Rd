@@ -37,7 +37,7 @@ absolute value. Used to populate \code{feature_importance} in
 ridge (and any zero coefficients) are included rather than excluded, since
 this is an importance ranking rather than a sparse selection.
 
-\strong{ranger}: impurity-based variable importance from
+\strong{ranger}: impurity-based feature importance from
 \code{ranger::ranger} (non-negative; requires \code{importance = "impurity"}
 to have been passed at training time, which \code{\link{run_model}} does
 whenever \code{compute_importance = TRUE}).

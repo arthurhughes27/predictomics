@@ -17,10 +17,12 @@ export(run_engineering)
 export(run_model)
 export(run_selection)
 export(simulate_predictomics_data)
-importFrom(stats,cor)
-importFrom(stats,median)
-importFrom(stats,model.matrix)
-importFrom(stats,prcomp)
-importFrom(stats,predict)
-importFrom(stats,sd)
+importFrom(stats,
+  cor,
+  median,
+  model.matrix,
+  prcomp,
+  predict,
+  sd
+)
 importFrom(utils,modifyList)
